@@ -27,7 +27,8 @@ const metaux = computed(() => {
     // Pas de vermeil ici, même si le catalogue du configurateur le propose
     // (Thomas, 16/11/2026).
     .filter((m: any) => !EXCLUS.includes(m.id))
-    .map((m: any) => tous.find((t: any) => t.id === m.id)).filter(Boolean)
+    // Argent 925 et non 950, comme le reste de l'atelier (Thomas, 16/11/2026).
+    .map((m: any) => tous.find((t: any) => t.id === (m.id === 'argent950' ? 'argent925' : m.id))).filter(Boolean)
 })
 const epaisseur = computed(() => produit.value?.thickness ?? 1.4)
 
@@ -36,7 +37,7 @@ const RELIEFS = [
   { h: 0.3, nom: 'Marqué', detail: '0,30 mm' },
   { h: 0.4, nom: 'Profond', detail: '0,40 mm' },
 ]
-const choix = reactive({ forme: 'LUN', taille: 16, hauteur: 0.3, metal: 'argent950' })
+const choix = reactive({ forme: 'LUN', taille: 16, hauteur: 0.3, metal: 'argent925' })
 const forme = computed(() => produit.value?.shapes.find((s: any) => s.id === choix.forme))
 const taille = computed<TailleMedaille | null>(() => forme.value?.sizes.find((t: any) => t.mm === choix.taille) ?? null)
 const metal = computed(() => metaux.value.find((m: any) => m.id === choix.metal))
