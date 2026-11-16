@@ -223,7 +223,9 @@ def traiter_agrandi(g, fg, periode_px, mm_par_px, p, avert):
         f2 = float(np.sqrt(PIXELS_MAX_AGRANDI / crop.size))
         avert.append(f"Agrandissement ramené de ×{f:g} à ×{f2:.1f} (image trop grande).")
         f = f2
-    up = ndi.zoom(crop, f, order=3, grid_mode=True, mode="nearest")
+    # float32 : les filtres vont deux fois plus vite, et le cache garde la
+    # moitié de la mémoire. La précision dépasse de loin celle d'un scan 8 bits.
+    up = ndi.zoom(crop.astype(np.float32), f, order=3, grid_mode=True, mode="nearest")
     fg_up = ndi.zoom(fg[y0:y1, x0:x1].astype(np.uint8), f, order=0, grid_mode=True,
                      mode="nearest").astype(bool)
     f_eff = up.shape[1] / crop.shape[1]
@@ -238,29 +240,34 @@ def traiter_agrandi(g, fg, periode_px, mm_par_px, p, avert):
     # blanc autour de l'empreinte il ne descend pas à zéro — sinon le vide
     # sortirait à mi-hauteur au lieu de rester à la cote de la face.
     t = np.clip(m, lo + 0.3 * plage, lo + 0.7 * plage)
-    soft = 1.0 / (1.0 + np.exp(-(c - t) / (p["douceur"] * plage)))
+    soft = (1.0 / (1.0 + np.exp(-(c - t) / (p["douceur"] * plage)))).astype(np.float32)
     soft = np.clip((soft - 0.03) / 0.94, 0, 1)
 
     # Points isolés trop petits pour la fonte, crêtes comme creux.
     mm_up = mm_par_px / f_eff
     aire_min = p["aire_min_mm2"] / mm_up ** 2
     bin_ = soft > 0.5
+    # Aires par bincount et tri par table : `ndi.sum` et `np.isin` sur une
+    # image agrandie coûtaient plus que tout le reste du seuillage.
     lab, nb = ndi.label(bin_)
     if nb:
-        aires = ndi.sum(bin_, lab, index=np.arange(1, nb + 1))
-        petits = np.isin(lab, 1 + np.nonzero(aires < aire_min)[0])
-        garde = bin_ & ~petits
-        zone = ndi.binary_dilation(garde, iterations=max(1, int(0.25 * P)))
+        aires = np.bincount(lab.ravel(), minlength=nb + 1)
+        petit = aires < aire_min
+        petit[0] = False
+        garde = bin_ & ~petit[lab]
+        k = max(1, int(0.25 * P))
+        zone = ndi.maximum_filter(garde.view(np.uint8), size=2 * k + 1).astype(bool)
         soft = soft * zone
-        retires = int(np.sum(aires < aire_min))
+        retires = int(petit.sum())
     else:
         retires = 0
     trous = ~bin_ & fg_up
     lab, nb = ndi.label(trous)
     if nb:
-        aires = ndi.sum(trous, lab, index=np.arange(1, nb + 1))
-        petits = np.isin(lab, 1 + np.nonzero(aires < aire_min)[0])
-        soft[petits] = 1.0
+        aires = np.bincount(lab.ravel(), minlength=nb + 1)
+        petit = aires < aire_min
+        petit[0] = False
+        soft[petit[lab]] = 1.0
     soft = soft * fg_up
     return soft, fg_up, (x0, y0), f_eff, retires
 
@@ -305,19 +312,57 @@ def borner_bande(emp: Empreinte, largeur_mm):
     b.l_max_px = +0.5 * b.longueur_mm / emp.mm_par_px
 
 
+# — Cache ——————————————————————————————————————————————————————————
+# ⚠️ LE TRAITEMENT DE L'EMPREINTE NE DÉPEND PAS DE LA BAGUE. Il était refait à
+# chaque clic sur une taille ou un relief : 4 s sur 6 du recalcul, pour un
+# résultat identique. Le processus Python reste chargé côté serveur (voir
+# `python -m moteur serveur`), et garde ici les dernières empreintes traitées.
+_CACHE: dict = {}
+_CACHE_MAX = 4
+
+
+def _memo(cle, calcul):
+    if cle in _CACHE:
+        v = _CACHE.pop(cle)
+    else:
+        v = calcul()
+    _CACHE[cle] = v
+    while len(_CACHE) > _CACHE_MAX:
+        _CACHE.pop(next(iter(_CACHE)))
+    return v
+
+
+def _base(chemin_image, p):
+    """Ce qui ne dépend que de l'image : support, période, orientation."""
+    def calcul():
+        g, avert = charger_gris(chemin_image)
+        if p.get("miroir"):
+            g = g[:, ::-1].copy()
+        cretes = 1.0 - g if p["cretes_noires"] else g
+        fg = masque_support(cretes)
+        per = periode_cretes(cretes, fg)
+        if per < 4:
+            avert.append(f"Scan peu résolu : {per:.1f} px par crête, les flancs seront approximatifs.")
+        theta, coh = champ_orientation(cretes, per)
+        return g, fg, per, theta, coh, avert
+    st = Path(chemin_image).stat()
+    return _memo(("base", str(chemin_image), st.st_mtime_ns, st.st_size,
+                  bool(p.get("miroir")), bool(p["cretes_noires"])), calcul)
+
+
 def preparer(chemin_image, p) -> Empreinte:
-    g, avert = charger_gris(chemin_image)
-    if p.get("miroir"):
-        g = g[:, ::-1].copy()
-    cretes = 1.0 - g if p["cretes_noires"] else g
-    fg = masque_support(cretes)
-    per = periode_cretes(cretes, fg)
-    if per < 4:
-        avert.append(f"Scan peu résolu : {per:.1f} px par crête, les flancs seront approximatifs.")
+    g, fg, per, theta, coh, avert0 = _base(chemin_image, p)
+    avert = list(avert0)
     mm_par_px = (p["largeur_utile"] / p["cretes_largeur"]) / per
-    theta, coh = champ_orientation(cretes, per)
     largeur_px = p["largeur_utile"] / mm_par_px
     dec_px = p["decalage_bande"] / mm_par_px
+    st = Path(chemin_image).stat()
+    cle = (str(chemin_image), st.st_mtime_ns, st.st_size, bool(p.get("miroir")), bool(p["cretes_noires"]),
+           # L'échelle seule compte (pour l'aire minimale des points isolés),
+           # pas la largeur du fil qui y mène : changer de fil à échelle égale
+           # ne retraite pas l'empreinte.
+           round(mm_par_px, 7), p["flou"], p["douceur"],
+           p["aire_min_mm2"], p["agrandissement"])
     manuel = p.get("bande_px")
     auto = p.get("angle_bande_deg") is None and not manuel
     if manuel:
@@ -336,12 +381,16 @@ def preparer(chemin_image, p) -> Empreinte:
         W = np.stack([xs, ys], 1) @ n
         dec_px = float(milieu @ n - 0.5 * (W.min() + W.max()))
     elif auto:
-        angle, dec_px = chercher_bande(fg, theta, coh, largeur_px)
+        angle, dec_px = _memo(("bande",) + cle, lambda: chercher_bande(fg, theta, coh, largeur_px))
     else:
         angle = np.radians(p["angle_bande_deg"])
     bande = placer_bande(fg, theta, coh, angle, largeur_px, dec_px, mm_par_px)
     bande.decalage_px, bande.auto = float(dec_px), auto
-    relief, fg_up, origine, f, retires = traiter_agrandi(g, fg, per, mm_par_px, p, avert)
+    def _traiter():
+        av = []
+        return traiter_agrandi(g, fg, per, mm_par_px, p, av) + (av,)
+    relief, fg_up, origine, f, retires, avert_t = _memo(("relief",) + cle, _traiter)
+    avert += avert_t
     if retires:
         avert.append(f"{retires} point(s) isolé(s) trop petit(s) pour la fonte retiré(s).")
     emp = Empreinte(g, fg, per, mm_par_px, theta, coh, relief, fg_up, origine, f, bande, avert)

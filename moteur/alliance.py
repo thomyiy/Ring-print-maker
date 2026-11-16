@@ -190,8 +190,24 @@ def ecart_raccord(p, m: Maillage) -> float:
     return float(np.max(np.linalg.norm(fin - debut, axis=1)))
 
 
-def controler(p, m: Maillage) -> dict:
+def controler(p, m: Maillage, complet=True) -> dict:
+    """`complet=False` pour l'aperçu : volume et cotes seulement. L'étanchéité
+    et les normales ne dépendent pas des choix du client (le maillage a la même
+    topologie à chaque fois) et sont vérifiées sur le fichier de fabrication."""
     V, F = m.V, m.F
+    if not complet:
+        rad = np.hypot(V[:, 0], V[:, 1])
+        vol = volume_signe(V, F)
+        s_rel = m.s[np.nonzero(m.relief.max(1) > 0.02 * p["hauteur_relief"])[0]]
+        return {
+            "diametre_interieur_min": float(2 * rad.min()),
+            "diametre_exterieur_max": float(2 * rad.max()),
+            "largeur_max": float(2 * demi_hauteur(m.alpha, p["cote"], p["rayon_arete"]).max()),
+            "volume_mm3": vol,
+            "poids_or_750_g": vol / 1000 * p["densite_or"],
+            "poids_argent_925_g": vol / 1000 * p["densite_argent"],
+            "longueur_arc_relief_mm": float(np.ptp(s_rel)) if len(s_rel) else 0.0,
+        }
     # Étanchéité : chaque arête non orientée vue exactement deux fois, et
     # chaque arête orientée une seule fois (orientation cohérente).
     e = np.concatenate([F[:, [0, 1]], F[:, [1, 2]], F[:, [2, 0]]])
@@ -232,6 +248,18 @@ def controler(p, m: Maillage) -> dict:
         "sommets": int(len(V)),
         "triangles": int(len(F)),
     }
+
+
+def ecrire_grille(chemin, m: Maillage):
+    """L'aperçu pour le navigateur : en-tête int32 (M, N, sens des triangles)
+    puis les sommets en float32, section par section. Le navigateur refait la
+    triangulation de `trianguler`, raccord décalé de N/2 compris."""
+    # `trianguler` commence par (0, 1, N+1) ; `construire` a permuté les deux
+    # derniers sommets si le volume sortait négatif.
+    inverse = 0 if int(m.F[0][1]) == 1 else 1
+    with open(chemin, "wb") as f:
+        f.write(np.array([m.M, m.N, inverse], dtype="<i4").tobytes())
+        f.write(m.V.astype("<f4").tobytes())
 
 
 def ecrire_stl(chemin, V, F):

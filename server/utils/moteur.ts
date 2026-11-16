@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -29,42 +29,77 @@ export function nomSortie(nom: string): string {
 }
 
 // ⚠️ Un seul calcul à la fois : un maillage de fabrication prend ~1 Go de
-// mémoire et 10 à 15 s. Deux en parallèle sur un petit conteneur Railway
-// suffisent à le faire tuer.
+// mémoire. Deux en parallèle sur un petit conteneur Railway suffisent à le
+// faire tuer.
 let file: Promise<unknown> = Promise.resolve()
 
 export function lancerMoteur(args: string[]): Promise<any> {
-  const tache = file.then(() => executer(args))
+  const tache = file.then(() => demander(args))
   file = tache.catch(() => undefined)
   return tache
 }
 
-function executer(args: string[]): Promise<any> {
+// — Le processus Python persistant ———————————————————————————————————
+// ⚠️ UN PROCESSUS PAR CALCUL COÛTAIT 1,4 s D'IMPORTS ET JETAIT LE CACHE.
+// Changer la taille de doigt prenait 7 à 9 s, dont 6 à retraiter une empreinte
+// qui n'avait pas changé. Le moteur reste maintenant chargé
+// (`python -m moteur serveur`) : une ligne JSON par demande, une ligne marquée
+// `§§` par réponse. S'il meurt, le suivant le relance.
+let ouvrier: ChildProcessWithoutNullStreams | null = null
+let tampon = ''
+let attente: { ok: (r: any) => void; ko: (e: any) => void } | null = null
+
+function demarrer(): ChildProcessWithoutNullStreams {
   const cfg = useRuntimeConfig()
-  return new Promise((ok, ko) => {
-    const p = spawn(cfg.python || 'python3', ['-m', 'moteur', ...args], {
-      cwd: process.cwd(),
-      env: { ...process.env, MPLBACKEND: 'Agg', MPLCONFIGDIR: join(tmpdir(), 'mpl') },
-    })
-    let out = ''
-    let err = ''
-    const minuterie = setTimeout(() => p.kill('SIGKILL'), 180_000)
-    p.stdout.on('data', (d) => (out += d))
-    p.stderr.on('data', (d) => (err += d))
-    p.on('error', (e) => {
-      clearTimeout(minuterie)
-      ko(createError({ statusCode: 500, statusMessage: `Moteur introuvable : ${e.message}` }))
-    })
-    p.on('close', () => {
-      clearTimeout(minuterie)
+  const p = spawn(cfg.python || 'python3', ['-m', 'moteur', 'serveur'], {
+    cwd: process.cwd(),
+    env: { ...process.env, MPLBACKEND: 'Agg', MPLCONFIGDIR: join(tmpdir(), 'mpl'), PYTHONUNBUFFERED: '1' },
+  })
+  tampon = ''
+  p.stdout.setEncoding('utf8')
+  p.stdout.on('data', (d: string) => {
+    tampon += d
+    let i: number
+    while ((i = tampon.indexOf('\n')) >= 0) {
+      const ligne = tampon.slice(0, i)
+      tampon = tampon.slice(i + 1)
+      if (!ligne.startsWith('§§') || !attente) continue
+      const a = attente
+      attente = null
       try {
-        const r = JSON.parse(out)
-        if (!r.ok) return ko(createError({ statusCode: 422, statusMessage: r.erreur, data: { trace: r.trace } }))
-        ok(r)
+        const r = JSON.parse(ligne.slice(2))
+        if (r.ok) a.ok(r)
+        else a.ko(createError({ statusCode: 422, statusMessage: r.erreur, data: { trace: r.trace } }))
       } catch {
-        ko(createError({ statusCode: 500, statusMessage: 'Le moteur n’a rien rendu', data: { stderr: err.slice(-2000) } }))
+        a.ko(createError({ statusCode: 500, statusMessage: 'Réponse illisible du moteur' }))
       }
-    })
+    }
+  })
+  let journal = ''
+  p.stderr.on('data', (d) => { journal = (journal + d).slice(-4000) })
+  const fin = (raison: string) => {
+    if (ouvrier === p) ouvrier = null
+    if (attente) {
+      const a = attente
+      attente = null
+      a.ko(createError({ statusCode: 500, statusMessage: `Le moteur s’est arrêté (${raison})`, data: { stderr: journal } }))
+    }
+  }
+  p.on('exit', (code, signal) => fin(signal ?? `code ${code}`))
+  p.on('error', (e) => fin(e.message))
+  return p
+}
+
+function demander(args: string[]): Promise<any> {
+  return new Promise((ok, ko) => {
+    if (!ouvrier) ouvrier = demarrer()
+    const p = ouvrier
+    const minuterie = setTimeout(() => p.kill('SIGKILL'), 180_000)
+    attente = {
+      ok: (r) => { clearTimeout(minuterie); ok(r) },
+      ko: (e) => { clearTimeout(minuterie); ko(e) },
+    }
+    p.stdin.write(JSON.stringify(args) + '\n')
   })
 }
 
@@ -118,5 +153,10 @@ export function urlsFichiers(id: string, sous: string, r: any) {
   const base = `/api/fichiers/${id}/${sous}/`
   const images: Record<string, string> = {}
   for (const [k, v] of Object.entries(r.images ?? {})) images[k] = base + v
-  return { ...r, images, stl: r.stl ? base + r.stl : undefined }
+  return {
+    ...r,
+    images,
+    stl: r.stl ? base + r.stl : undefined,
+    apercu: r.apercu ? base + r.apercu : undefined,
+  }
 }

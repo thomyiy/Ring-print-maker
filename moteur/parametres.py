@@ -20,7 +20,7 @@ TABLE = {
     "sens": (1, -1, 1, 2, "", "Sens de la torsion", "forme"),
     # — Empreinte ———————————————————————————————————————
     "hauteur_relief": (0.18, 0.08, 0.4, 0.01, "mm", "Hauteur des crêtes", "empreinte"),
-    "cretes_largeur": (7.0, 4.0, 10.0, 0.5, "", "Crêtes dans la largeur", "empreinte"),
+    "cretes_largeur": (7.0, 2.5, 10.0, 0.5, "", "Crêtes dans la largeur", "empreinte"),
     "angle_bande_deg": (None, 0.0, 180.0, 1.0, "°", "Angle de la bande (vide = auto)", "empreinte"),
     "decalage_bande": (0.0, -6.0, 6.0, 0.05, "mm", "Décalage de la bande", "empreinte"),
     "cretes_noires": (True, None, None, None, "", "Crêtes noires sur l'image", "empreinte"),
@@ -85,4 +85,10 @@ def normaliser(brut: dict | None) -> dict:
     p["n_sections"] += p["n_sections"] % 2
     p["rayon_arete"] = min(p["rayon_arete"], p["cote"] / 2 - 0.05)
     p["largeur_utile"] = p["cote"] - 2 * p["rayon_arete"]
+    # L'échelle peut aussi se donner par la période des crêtes sur la bague
+    # (mm d'une crête à la suivante). C'est ce que règle la page client : la
+    # taille de l'empreinte ne bouge plus quand on change la largeur du fil.
+    if brut.get("periode_mm"):
+        per = min(max(float(brut["periode_mm"]), 0.15), 0.8)
+        p["cretes_largeur"] = p["largeur_utile"] / per
     return p

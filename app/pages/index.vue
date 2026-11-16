@@ -27,7 +27,17 @@ const RELIEFS = [
 ]
 const TAILLES = Array.from({ length: 27 }, (_, i) => 44 + i)
 
-const choix = reactive({ metal: 'or-jaune', taille: 54, cote: 1.8, relief: 0.25 })
+// L'échelle de l'empreinte, donnée par l'écart entre deux crêtes sur la bague.
+// ⚠️ « TAILLE RÉELLE » PAR DÉFAUT. Le moteur partait sur 7 crêtes dans 1,5 mm
+// (0,21 mm d'écart), soit deux fois plus serré qu'un vrai doigt : toute
+// l'empreinte tenait en 6 mm et ne se lisait plus sur la bague. Thomas l'a vu
+// le 16/11/2026 : « là c'est trop compressé ».
+const ECHELLES = [
+  { periode: 0.45, nom: 'Taille réelle' },
+  { periode: 0.32, nom: 'Réduite' },
+  { periode: 0.22, nom: 'Très fine' },
+]
+const choix = reactive({ metal: 'or-jaune', taille: 54, cote: 1.8, relief: 0.25, periode: 0.45 })
 
 // Le placement de l'empreinte : null tant que le client laisse faire le
 // placement automatique, sinon les deux bouts posés dans l'éditeur.
@@ -83,6 +93,7 @@ function paramsMoteur() {
     taille: choix.taille,
     diametre_interieur: Math.round((choix.taille / Math.PI) * 10) / 10,
     cote: choix.cote,
+    periode_mm: choix.periode,
     hauteur_relief: choix.relief,
     bande_px: bandePx.value,
     bord_a_bord: bordABord.value,
@@ -130,17 +141,17 @@ let minuterie: ReturnType<typeof setTimeout> | undefined
 // voyait pas.
 const enAttente = ref(false)
 const occupe = computed(() => enAttente.value || etat.value === 'calcul' || etat.value === 'envoi')
-watch(() => [choix.taille, choix.cote, choix.relief], () => {
+watch(() => [choix.taille, choix.cote, choix.relief, choix.periode], () => {
   clearTimeout(minuterie)
   if (depot.value) enAttente.value = true
-  if (depot.value) minuterie = setTimeout(calculer, 400)
+  if (depot.value) minuterie = setTimeout(calculer, 150)
 })
 
 // — L'envoi ————————————————————————————————————————————————————
 const fenetreEnvoi = ref<{ ouvrir: () => void } | null>(null)
 const LIB_RELIEF: Record<number, string> = { 0.18: 'délicat', 0.25: 'marqué', 0.3: 'profond' }
 const resume = computed(() =>
-  `Alliance empreinte · ${metal.value.nom} · taille ${choix.taille} · fil ${f(choix.cote, 1)} mm · relief ${LIB_RELIEF[choix.relief] ?? f(choix.relief, 2) + ' mm'}`)
+  `Alliance empreinte · ${ECHELLES.find((e) => e.periode === choix.periode)?.nom.toLowerCase() ?? ''} · ${metal.value.nom} · taille ${choix.taille} · fil ${f(choix.cote, 1)} mm · relief ${LIB_RELIEF[choix.relief] ?? f(choix.relief, 2) + ' mm'}`)
 
 async function envoyer(fo: { nom_piece: string; nom: string; email: string; telephone: string; message: string }) {
   return await $fetch<{ piece: string; ref: string }>('/api/envoi', {
@@ -149,7 +160,7 @@ async function envoyer(fo: { nom_piece: string; nom: string; email: string; tele
       id: depot.value!.id,
       piece: { nom: fo.nom_piece },
       contact: { nom: fo.nom, email: fo.email, telephone: fo.telephone, message: fo.message },
-      choix: { metal: choix.metal, metalNom: metal.value.nom, taille: choix.taille, cote: choix.cote, relief: choix.relief, poids_g: poids(metal.value.densite) },
+      choix: { metal: choix.metal, metalNom: metal.value.nom, taille: choix.taille, cote: choix.cote, relief: choix.relief, periode_mm: choix.periode, poids_g: poids(metal.value.densite) },
       params: paramsMoteur(),
     },
   })
@@ -179,7 +190,7 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
       <!-- ─── La bague ─── -->
       <div class="relative min-h-[56vh] bg-paper-2 lg:sticky lg:top-0 lg:h-[calc(100vh-65px)]">
         <ClientOnly>
-          <VueAlliance v-if="resultat?.stl" :url="resultat.stl" :teinte="metal.teinte" />
+          <VueAlliance v-if="resultat?.apercu" :url="resultat.apercu" :teinte="metal.teinte" />
         </ClientOnly>
 
         <div v-if="!resultat" class="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
@@ -254,6 +265,21 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
             @change="placer"
           />
           <p v-else class="mt-4 text-[13px] text-muted">Lecture de l’empreinte…</p>
+
+          <span class="champ-intitule mt-6">Taille de l’empreinte</span>
+          <div class="mt-2 grid grid-cols-3 gap-px border border-line bg-line">
+            <button
+              v-for="e in ECHELLES" :key="e.periode" type="button"
+              class="bg-paper px-3 py-3 text-center"
+              :class="choix.periode === e.periode ? 'outline outline-2 -outline-offset-2 outline-ink' : 'hover:bg-paper-2'"
+              :aria-pressed="choix.periode === e.periode"
+              @click="choix.periode = e.periode"
+            >
+              <span class="block text-[14px] text-ink">{{ e.nom }}</span>
+              <span class="valeur block text-[12px] text-txt">≈ {{ Math.round((choix.cote - 0.3) / e.periode) }} crêtes</span>
+            </button>
+          </div>
+          <p class="mt-2 text-[13px] text-txt">Le nombre de crêtes sur la largeur de la face.</p>
         </section>
 
         <!-- 3. Le métal -->
@@ -336,10 +362,10 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
                Le fichier ne quitte le serveur que pour l'atelier (/atelier). -->
           <button
             type="button" class="btn-primary mt-6 w-full"
-            :disabled="!resultat?.stl || etat === 'calcul'"
+            :disabled="!resultat?.apercu || occupe"
             @click="fenetreEnvoi?.ouvrir()"
           >
-            {{ resultat?.stl ? 'Envoyer ma bague à l’atelier' : 'Ajoutez d’abord votre empreinte' }}
+            {{ resultat?.apercu ? 'Envoyer ma bague à l’atelier' : 'Ajoutez d’abord votre empreinte' }}
           </button>
           <FenetreEnvoi ref="fenetreEnvoi" :resume="resume" :envoyer="envoyer" />
         </section>

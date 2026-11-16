@@ -2,7 +2,7 @@ import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
-const TYPES: Record<string, string> = { png: 'image/png', stl: 'model/stl', json: 'application/json' }
+const TYPES: Record<string, string> = { png: 'image/png', stl: 'model/stl', json: 'application/json', bin: 'application/octet-stream' }
 
 export default defineEventHandler(async (event) => {
   const id = getRouterParam(event, 'id') ?? ''
@@ -14,7 +14,7 @@ export default defineEventHandler(async (event) => {
     chemin = join(dossier, 'source.png')
   } else if (morceaux.length === 2) {
     const [sous, fichier] = morceaux
-    const m = /^([a-z0-9_]+)\.(png|stl|json)$/i.exec(fichier)
+    const m = /^([a-z0-9_]+)\.(png|stl|json|bin)$/i.exec(fichier)
     if (!m) throw createError({ statusCode: 400 })
     chemin = join(dossier, nomSortie(sous), fichier)
     nom = fichier
