@@ -174,14 +174,13 @@ const LIB_RELIEF: Record<number, string> = { 0.18: 'délicat', 0.25: 'marqué', 
 const resume = computed(() =>
   `Alliance empreinte · crêtes ${f(periodeMm.value, 2)} mm · ${metal.value.nom} · taille ${choix.taille} · fil ${f(choix.cote, 1)} mm · relief ${LIB_RELIEF[choix.relief] ?? f(choix.relief, 2) + ' mm'}`)
 
-async function envoyer(fo: { nom_piece: string; nom: string; email: string; telephone: string; message: string }) {
+async function envoyer(fo: { nom_piece: string }) {
   return await $fetch<{ piece: string; ref: string }>('/api/envoi', {
     method: 'POST',
     body: {
       id: depot.value!.id,
       marque: marque.id,
       piece: { nom: fo.nom_piece },
-      contact: { nom: fo.nom, email: fo.email, telephone: fo.telephone, message: fo.message },
       choix: { metal: choix.metal, metalNom: metal.value.nom, taille: choix.taille, cote: choix.cote, relief: choix.relief, periode_mm: periodeMm.value, poids_g: poids(metal.value.densite) },
       params: paramsMoteur(),
     },

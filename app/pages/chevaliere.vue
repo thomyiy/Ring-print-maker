@@ -201,7 +201,7 @@ const resume = computed(() => [
   metal.value?.name, `taille ${choix.doigt}`,
 ].filter(Boolean).join(' · '))
 
-async function envoyer(fo: { nom_piece: string; nom: string; email: string; telephone: string; message: string }) {
+async function envoyer(fo: { nom_piece: string }) {
   return await $fetch<{ piece: string; ref: string }>('/api/envoi', {
     method: 'POST',
     body: {
@@ -209,7 +209,6 @@ async function envoyer(fo: { nom_piece: string; nom: string; email: string; tele
       id: depot.value!.id,
       marque: marque.id,
       piece: { nom: fo.nom_piece || 'Chevalière empreinte' },
-      contact: { nom: fo.nom, email: fo.email, telephone: fo.telephone, message: fo.message },
       choix: { resume: resume.value, metalNom: metal.value?.name, poids_g: poids(metal.value?.density ?? 0) },
       params: {
         forme: choix.forme, plateau: choix.plateau, remplissage: choix.remplissage, doigt: choix.doigt,

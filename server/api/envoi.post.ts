@@ -35,10 +35,7 @@ export default defineEventHandler(async (event) => {
     telephone: nettoyer(c.contact?.telephone, 40),
     message: nettoyer(c.contact?.message, 2000),
   }
-  if (!contact.nom) throw createError({ statusCode: 400, statusMessage: 'Votre nom est nécessaire.' })
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(contact.email)) {
-    throw createError({ statusCode: 400, statusMessage: 'L’adresse e-mail ne semble pas valide.' })
-  }
+  // Plus de coordonnées demandées : la pièce se retrouve par son nom.
 
   const d = new Date()
   const p2 = (n: number) => String(n).padStart(2, '0')

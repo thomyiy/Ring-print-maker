@@ -54,8 +54,8 @@ const f = (x: number, d = 1) => (x ?? 0).toLocaleString('fr-FR', { minimumFracti
             {{ e.piece }}
             <span v-if="e.marque === 'joia'" class="tag ml-2 align-middle">Joia Bijou</span>
           </p>
-          <p class="text-txt">
-            {{ e.contact.nom }} · <a :href="`mailto:${e.contact.email}`" class="lien">{{ e.contact.email }}</a>
+          <p v-if="e.contact?.nom || e.contact?.email" class="text-txt">
+            {{ e.contact.nom }}<template v-if="e.contact.email"> · <a :href="`mailto:${e.contact.email}`" class="lien">{{ e.contact.email }}</a></template>
             <template v-if="e.contact.telephone"> · {{ e.contact.telephone }}</template>
           </p>
           <p class="valeur mt-1 text-[12px] text-txt">
@@ -63,7 +63,7 @@ const f = (x: number, d = 1) => (x ?? 0).toLocaleString('fr-FR', { minimumFracti
             <template v-else>{{ e.choix.metalNom }} · taille {{ e.choix.taille }} · fil {{ f(e.choix.cote) }} mm · relief {{ f(e.choix.relief, 2) }} mm</template>
             · {{ f(e.controles.poids_or_750_g, 2) }} g or / {{ f(e.controles.poids_argent_925_g, 2) }} g argent
           </p>
-          <p v-if="e.contact.message" class="mt-2 text-txt">« {{ e.contact.message }} »</p>
+          <p v-if="e.contact?.message" class="mt-2 text-txt">« {{ e.contact.message }} »</p>
           <p class="valeur mt-1 text-[12px] text-muted">{{ date(e.recu_le) }} · {{ e.ref }}</p>
         </div>
         <div class="flex flex-col gap-2 text-[14px] md:items-end">
