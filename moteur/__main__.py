@@ -54,6 +54,24 @@ def analyser(image, p, sortie: Path):
                  "images": {"masque": "masque.png", "bande": "bande.png", "edition": "edition.png"}}
 
 
+def preparer(image, p, sortie: Path):
+    """Pour la page client, qui construit la bague dans le navigateur : tout
+    ce qui demande scipy, une seule fois par empreinte. L'image d'édition, la
+    texture de relief, la période des crêtes et la bande automatique."""
+    emp = E.preparer(image, p)
+    edition = E.image_edition(emp, sortie / "edition.png")
+    texture = E.texture_relief(emp, sortie / "relief.png")
+    return {
+        "bande": _bande_json(emp, p),
+        "avertissements": emp.avertissements,
+        "edition": edition,
+        "texture": texture,
+        "periode_px": emp.periode_px,
+        "hauteur_image": int(emp.gris.shape[0]),
+        "images": {"edition": "edition.png", "relief": "relief.png"},
+    }
+
+
 def generer(image, p, sortie: Path, leger=False):
     """`leger` : l'aperçu de la page client. Ni figures, ni rendus, ni STL :
     une grille de sommets en float32 (`apercu.bin`), huit fois plus légère, que
@@ -95,7 +113,7 @@ def generer(image, p, sortie: Path, leger=False):
 
 def _arguments():
     ap = argparse.ArgumentParser(prog="moteur")
-    ap.add_argument("action", choices=["schema", "analyser", "generer", "demo", "synthetique", "serveur"])
+    ap.add_argument("action", choices=["schema", "analyser", "preparer", "generer", "demo", "synthetique", "serveur"])
     ap.add_argument("--image")
     ap.add_argument("--params")
     ap.add_argument("--sortie", default="sortie")
@@ -117,9 +135,14 @@ def executer(argv) -> dict:
     image = a.image
     if a.action == "demo":
         image = str(synthetique.empreinte_synthetique(sortie / "empreinte_demo.png"))
-    if not image and a.action == "analyser":
+    if not image and a.action in ("analyser", "preparer"):
         raise ValueError("Une image d'empreinte est nécessaire.")
-    out = analyser(image, p, sortie)[1] if a.action == "analyser" else generer(image, p, sortie, a.leger)
+    if a.action == "analyser":
+        out = analyser(image, p, sortie)[1]
+    elif a.action == "preparer":
+        out = preparer(image, p, sortie)
+    else:
+        out = generer(image, p, sortie, a.leger)
     (sortie / "resultat.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
     return out
 

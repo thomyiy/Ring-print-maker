@@ -8,7 +8,9 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
-const props = defineProps<{ url: string | null; teinte: number; fond?: number }>()
+import { trianguler, type Alliance } from '~~/shared/alliance'
+
+const props = defineProps<{ url?: string | null; maillage?: Alliance | null; teinte: number; fond?: number }>()
 const hote = ref<HTMLDivElement>()
 const chargement = ref(false)
 
@@ -62,6 +64,7 @@ onMounted(() => {
   controls.addEventListener('change', redessiner)
   redessiner()
   if (props.url) charger(props.url)
+  if (props.maillage) poser(props.maillage)
 })
 
 onBeforeUnmount(() => { cancelAnimationFrame(anim); renderer?.dispose() })
@@ -78,32 +81,39 @@ function stl(buf: ArrayBuffer) {
 
 /**
  * L'aperçu du moteur (`apercu.bin`) : M sections de N sommets, déjà partagés.
- * On refait ici la triangulation de `moteur/alliance.py::trianguler`, raccord
- * décalé de N/2 compris — huit fois moins à transférer qu'un STL, et pas de
+ * La triangulation est celle de `shared/alliance.ts`, raccord décalé de N/2
+ * compris — huit fois moins à transférer qu'un STL, et pas de
  * soudure à calculer dans le navigateur.
  */
 function grille(buf: ArrayBuffer) {
   const [M, N, inverse] = new Int32Array(buf, 0, 3)
   const pos = new Float32Array(buf, 12, M! * N! * 3)
-  const idx = new Uint32Array(M! * N! * 6)
-  let k = 0
-  for (let j = 0; j < M!; j++) {
-    const jn = (j + 1) % M!
-    const dec = j === M! - 1 ? N! / 2 : 0
-    for (let i = 0; i < N!; i++) {
-      const a = j * N! + i
-      const b = j * N! + ((i + 1) % N!)
-      const c = jn * N! + ((i + 1 + dec) % N!)
-      const d = jn * N! + ((i + dec) % N!)
-      if (inverse) { idx.set([a, c, b, a, d, c], k) } else { idx.set([a, b, c, a, c, d], k) }
-      k += 6
-    }
-  }
+  const idx = trianguler(M!, N!, !!inverse)
   const geo = new BufferGeometry()
   geo.setAttribute('position', new BufferAttribute(pos, 3))
   geo.setIndex(new BufferAttribute(idx, 1))
   geo.computeVertexNormals()
   return geo
+}
+
+/** Remplace la bague affichée, et cadre la vue la première fois seulement. */
+function installer(geo: BufferGeometry) {
+  if (maillage) { scene.remove(maillage); maillage.geometry.dispose() }
+  maillage = new Mesh(geo, matiere)
+  scene.add(maillage)
+  redessiner()
+  // ⚠️ ON NE RECADRE QU'UNE FOIS. Recadrer à chaque recalcul ramenait la
+  // caméra au point de départ après chaque clic sur une taille : on perdait
+  // l'angle qu'on venait de choisir pour regarder l'empreinte.
+  if (cadre) return
+  cadre = true
+  const b = new Box3().setFromObject(maillage)
+  const c = b.getCenter(new Vector3())
+  controls.target.copy(c)
+  const r = b.getSize(new Vector3()).length()
+  // Vue de départ : en biais et par-dessus, l'empreinte face au regard.
+  camera.position.copy(c).add(new Vector3(0.45, 0.85, 0.75).normalize().multiplyScalar(r * 1.75))
+  redessiner()
 }
 
 let demande = ''
@@ -115,29 +125,41 @@ async function charger(url: string) {
   try {
     const buf = await (await fetch(url)).arrayBuffer()
     if (url !== demande) return // un calcul plus récent est déjà parti
-    const geo = url.endsWith('.bin') ? grille(buf) : stl(buf)
-    if (maillage) { scene.remove(maillage); maillage.geometry.dispose() }
-    maillage = new Mesh(geo, matiere)
-    scene.add(maillage)
-    redessiner()
-    // ⚠️ ON NE RECADRE QU'UNE FOIS. Recadrer à chaque recalcul ramenait la
-    // caméra au point de départ après chaque clic sur une taille : on perdait
-    // l'angle qu'on venait de choisir pour regarder l'empreinte.
-    if (cadre) return
-    cadre = true
-    const b = new Box3().setFromObject(maillage)
-    const c = b.getCenter(new Vector3())
-    controls.target.copy(c)
-    const r = b.getSize(new Vector3()).length()
-    // Vue de départ : en biais et par-dessus, l'empreinte face au regard.
-    camera.position.copy(c).add(new Vector3(0.45, 0.85, 0.75).normalize().multiplyScalar(r * 1.75))
-    redessiner()
+    installer(url.endsWith('.bin') ? grille(buf) : stl(buf))
+    cle = ''
   } finally {
     if (url === demande) chargement.value = false
   }
 }
 
 watch(() => props.url, (u) => u && charger(u))
+watch(() => props.maillage, (m) => m && poser(m))
+
+/**
+ * Une bague construite dans la page (shared/alliance.ts). Même nombre de
+ * sections et de points : on ne fait que remplacer les positions dans le
+ * tampon existant — pas de nouvelle géométrie, pas de nouvel index.
+ */
+let cle = ''
+function poser(a: Alliance) {
+  if (!renderer) return
+  const k = `${a.M}x${a.N}x${a.inverse}`
+  if (maillage && k === cle) {
+    const pos = maillage.geometry.getAttribute('position') as BufferAttribute
+    ;(pos.array as Float32Array).set(a.positions)
+    pos.needsUpdate = true
+    maillage.geometry.computeVertexNormals()
+    maillage.geometry.computeBoundingSphere()
+  } else {
+    const geo = new BufferGeometry()
+    geo.setAttribute('position', new BufferAttribute(a.positions.slice(), 3))
+    geo.setIndex(new BufferAttribute(trianguler(a.M, a.N, a.inverse), 1))
+    geo.computeVertexNormals()
+    installer(geo)
+    cle = k
+  }
+  redessiner()
+}
 watch(() => props.teinte, (t) => { matiere.color.setHex(t); redessiner() }, { immediate: true })
 
 function vue(nom: 'dessus' | 'face' | 'biais') {

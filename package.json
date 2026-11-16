@@ -11,6 +11,7 @@
     "preview": "nuxt preview",
     "start": "node .output/server/index.mjs",
     "postinstall": "nuxt prepare",
+    "test": "node --test test/*.test.ts",
     "moteur:demo": "python3 -m moteur demo --sortie .data/demo"
   },
   "dependencies": {

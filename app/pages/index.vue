@@ -3,6 +3,10 @@
      de l'image, maillage — se règle par défaut ; l'atelier garde la main sur
      /atelier. -->
 <script setup lang="ts">
+import {
+  boutsBande, construire, placerBande, type Alliance, type TextureRelief,
+} from '~~/shared/alliance'
+
 useHead({ title: 'Alliance empreinte — Rainbow Ant Workshop' })
 
 // — Les choix ————————————————————————————————————————————————————
@@ -38,27 +42,26 @@ const ECHELLES = [
   { periode: 0.22, nom: 'Très fine' },
 ]
 const choix = reactive({ metal: 'or-jaune', taille: 54, cote: 1.8, relief: 0.25, periode: 0.45 })
+const diametre = computed(() => Math.round((choix.taille / Math.PI) * 10) / 10)
 
-// Le placement de l'empreinte : null tant que le client laisse faire le
-// placement automatique, sinon les deux bouts posés dans l'éditeur.
+// — L'empreinte, traitée une fois par le moteur ——————————————————————
+// ⚠️ LA BAGUE SE CONSTRUIT DANS LE NAVIGATEUR (shared/alliance.ts), PAS SUR LE
+// SERVEUR. Le moteur Python ne sert qu'une fois par empreinte (`preparer` :
+// seuillage, échelle, cadrage automatique, texture de relief), puis à l'envoi
+// pour le fichier de fabrication. Chaque réglage — taille, fil, relief,
+// échelle, placement — se recalcule ici en quelques dizaines de millisecondes,
+// sans aller-retour. `test/geometrie.test.ts` garde les deux géométries égales.
+const depot = ref<{ id: string; nom: string; image: string } | null>(null)
+const etat = ref<'vide' | 'envoi' | 'preparation' | 'pret' | 'erreur'>('vide')
+const erreur = ref('')
+const glisse = ref(false)
+const prep = shallowRef<any>(null)
+const texture = shallowRef<TextureRelief | null>(null)
+
+// Le placement : les deux bouts posés dans l'éditeur (pixels, y vers le bas).
+// Au départ, ceux de la bande automatique du moteur.
 const bandePx = ref<[number, number, number, number] | null>(null)
 const bordABord = ref(true)
-function placer(b: [number, number, number, number] | null) {
-  bandePx.value = b
-  enAttente.value = true
-  calculer()
-}
-const edition = computed(() => resultat.value?.edition
-  ? { ...resultat.value.edition, image: resultat.value.images.edition }
-  : null)
-const metal = computed(() => METAUX.find((m) => m.id === choix.metal)!)
-
-// — L'empreinte ———————————————————————————————————————————————————
-const depot = ref<{ id: string; nom: string; image: string } | null>(null)
-const etat = ref<'vide' | 'envoi' | 'calcul' | 'pret' | 'erreur'>('vide')
-const erreur = ref('')
-const resultat = ref<any>(null)
-const glisse = ref(false)
 
 async function deposer(fichier?: File | null, demo = false) {
   if (!fichier && !demo) return
@@ -68,12 +71,9 @@ async function deposer(fichier?: File | null, demo = false) {
     const fd = new FormData()
     if (fichier) fd.append('image', fichier)
     depot.value = await $fetch('/api/empreinte' + (demo ? '?demo=1' : ''), { method: 'POST', body: fd })
-    // Une nouvelle empreinte repart du placement automatique : les bouts posés
-    // sur la précédente ne veulent rien dire sur celle-ci.
-    bandePx.value = null
-    bordABord.value = true
-    resultat.value = null
-    await calculer()
+    prep.value = null
+    texture.value = null
+    await preparer()
   } catch (e: any) {
     montrerErreur(e)
   }
@@ -87,65 +87,91 @@ function montrerErreur(e: any) {
     : m || 'Le calcul n’a pas abouti. Réessayez dans un instant.'
 }
 
-/** Ce que le moteur reçoit : la page et l'envoi partagent la même source. */
+/** Le moteur traite l'empreinte et propose une bande. Une fois au dépôt, puis
+ *  seulement si le client redemande le placement automatique. */
+async function preparer() {
+  if (!depot.value) return
+  etat.value = 'preparation'
+  try {
+    const r = await $fetch<any>('/api/calcul', {
+      method: 'POST',
+      body: { id: depot.value.id, action: 'preparer', params: { cote: choix.cote, periode_mm: choix.periode } },
+    })
+    // La texture devient des pixels lisibles par la géométrie.
+    const img = new Image()
+    img.src = r.images.relief
+    await img.decode()
+    const toile = document.createElement('canvas')
+    toile.width = img.naturalWidth
+    toile.height = img.naturalHeight
+    const ctx = toile.getContext('2d', { willReadFrequently: true })!
+    ctx.drawImage(img, 0, 0)
+    const t = r.texture
+    texture.value = {
+      donnees: ctx.getImageData(0, 0, toile.width, toile.height).data, pas: 4,
+      largeur: t.largeur, hauteur: t.hauteur, x0: t.x0, y0: t.y0, facteur: t.facteur,
+    }
+    prep.value = r
+    bandePx.value = [...r.edition.a, ...r.edition.b] as [number, number, number, number]
+    bordABord.value = true
+    etat.value = 'pret'
+  } catch (e) {
+    montrerErreur(e)
+  }
+}
+
+function placer(b: [number, number, number, number] | null) {
+  if (b) bandePx.value = b
+  else preparer() // « Placement automatique » : le moteur recadre à l'échelle du moment
+}
+
+// — La bague, construite ici ——————————————————————————————————————————
+const largeurUtile = computed(() => choix.cote - 2 * 0.15)
+const mmParPx = computed(() => (prep.value ? choix.periode / prep.value.periode_px : 0))
+const bande = computed(() => {
+  if (!prep.value || !texture.value || !bandePx.value) return null
+  return placerBande(bandePx.value, prep.value.hauteur_image, bordABord.value,
+    largeurUtile.value, mmParPx.value, prep.value.periode_px, texture.value)
+})
+const alliance = shallowRef<Alliance | null>(null)
+watchEffect(() => {
+  if (!bande.value || !texture.value) return
+  alliance.value = construire(
+    { diametre_interieur: diametre.value, cote: choix.cote, hauteur_relief: choix.relief, n_sections: 1080, n_face: 40 },
+    { bande: bande.value, texture: texture.value },
+  )
+})
+
+// L'éditeur montre la bande telle que la bague la porte : en bord à bord, sa
+// longueur suit l'empreinte et se recentre à chaque geste.
+const edition = computed(() => {
+  if (!prep.value || !bande.value) return null
+  const [ax, ay, bx, by] = boutsBande(bande.value, prep.value.hauteur_image)
+  return {
+    ...prep.value.edition,
+    image: prep.value.images.edition,
+    a: [ax, ay], b: [bx, by],
+    largeur_bande_px: largeurUtile.value / mmParPx.value,
+    mm_par_px: mmParPx.value,
+  }
+})
+
+/** Ce que le moteur reçoit à l'envoi : la bague qu'on voit, au point près. */
 function paramsMoteur() {
+  const b = bande.value && prep.value ? boutsBande(bande.value, prep.value.hauteur_image) : null
   return {
     taille: choix.taille,
-    diametre_interieur: Math.round((choix.taille / Math.PI) * 10) / 10,
+    diametre_interieur: diametre.value,
     cote: choix.cote,
     periode_mm: choix.periode,
     hauteur_relief: choix.relief,
-    bande_px: bandePx.value,
+    bande_px: b,
     bord_a_bord: bordABord.value,
   }
 }
 
-// Le dernier calcul demandé gagne : un réglage changé pendant un calcul en
-// relance un, et la réponse du précédent est ignorée.
-let numero = 0
-async function calculer() {
-  if (!depot.value) return
-  const n = ++numero
-  etat.value = 'calcul'
-  enAttente.value = false
-  try {
-    const r = await $fetch<any>('/api/calcul', {
-      method: 'POST',
-      body: {
-        id: depot.value.id,
-        action: 'generer',
-        leger: true,
-        params: {
-          ...paramsMoteur(),
-          // Entre l'aperçu et la fabrication : à 720 × 26 les crêtes sortaient
-          // en dents de scie à l'écran, et le client jugeait l'empreinte là-dessus.
-          n_sections: 1080,
-          n_face: 40,
-        },
-      },
-    })
-    if (n !== numero) return
-    resultat.value = r
-    etat.value = 'pret'
-  } catch (e) {
-    if (n === numero) montrerErreur(e)
-  }
-}
-
-// Le métal ne change que la teinte et le poids : pas de recalcul.
-let minuterie: ReturnType<typeof setTimeout> | undefined
-// ⚠️ L'INDICATEUR S'ALLUME AU CLIC, PAS AU DÉPART DU CALCUL. Entre les deux il
-// y a le délai d'attente, puis 8 à 10 s de calcul, et la bague affichée est
-// encore l'ancienne : Thomas l'a signalé le 16/11/2026 (« ça change la 3D mais
-// il n'y a pas d'indicateur »). Le petit « Mise à jour… » dans un coin ne se
-// voyait pas.
-const enAttente = ref(false)
-const occupe = computed(() => enAttente.value || etat.value === 'calcul' || etat.value === 'envoi')
-watch(() => [choix.taille, choix.cote, choix.relief, choix.periode], () => {
-  clearTimeout(minuterie)
-  if (depot.value) enAttente.value = true
-  if (depot.value) minuterie = setTimeout(calculer, 150)
-})
+const occupe = computed(() => etat.value === 'preparation' || etat.value === 'envoi')
+const metal = computed(() => METAUX.find((m) => m.id === choix.metal)!)
 
 // — L'envoi ————————————————————————————————————————————————————
 const fenetreEnvoi = ref<{ ouvrir: () => void } | null>(null)
@@ -166,12 +192,11 @@ async function envoyer(fo: { nom_piece: string; nom: string; email: string; tele
   })
 }
 
-const volume = computed(() => resultat.value?.controles?.volume_mm3 as number | undefined)
+const volume = computed(() => alliance.value?.volumeMm3)
 const poids = (d: number) => (volume.value ? (volume.value / 1000) * d : null)
 const f = (x: number | null | undefined, d = 1) =>
   x == null ? '—' : x.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d })
-const diametre = computed(() => Math.round((choix.taille / Math.PI) * 10) / 10)
-const largeurMax = computed(() => resultat.value?.controles?.largeur_max as number | undefined)
+const largeurMax = computed(() => alliance.value?.largeurMax)
 </script>
 
 <template>
@@ -190,10 +215,10 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
       <!-- ─── La bague ─── -->
       <div class="relative min-h-[56vh] bg-paper-2 lg:sticky lg:top-0 lg:h-[calc(100vh-65px)]">
         <ClientOnly>
-          <VueAlliance v-if="resultat?.apercu" :url="resultat.apercu" :teinte="metal.teinte" />
+          <VueAlliance v-if="alliance" :maillage="alliance" :teinte="metal.teinte" />
         </ClientOnly>
 
-        <div v-if="!resultat" class="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
+        <div v-if="!alliance" class="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
           <p class="eyebrow">Alliance empreinte</p>
           <div class="filet-teinte mx-auto mt-3" />
           <h1 class="mt-5 text-[40px] sm:text-[52px]">Votre empreinte, en relief</h1>
@@ -201,19 +226,19 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
             Un fil carré qui fait un demi-tour sur le dessus de la main. Sur la face qui passe
             au sommet, les crêtes de votre empreinte, en relief dans le métal.
           </p>
-          <p v-if="etat === 'envoi' || etat === 'calcul'" class="eyebrow mt-8">Votre bague se dessine…</p>
+          <p v-if="etat === 'envoi' || etat === 'preparation'" class="eyebrow mt-8">Lecture de votre empreinte…</p>
         </div>
 
         <!-- Recalcul : la bague affichée est l'ancienne, on le dit franchement. -->
-        <div v-if="resultat && occupe" class="pointer-events-none absolute inset-0 bg-paper-2/60" aria-live="polite">
+        <div v-if="alliance && occupe" class="pointer-events-none absolute inset-0 bg-paper-2/60" aria-live="polite">
           <div class="barre-calcul absolute inset-x-0 top-0 h-[3px] overflow-hidden bg-vert-pale" />
           <div class="absolute inset-0 flex items-center justify-center">
             <p class="border border-line bg-paper px-5 py-3 text-[15px] text-ink">
-              Votre bague se met à jour…
+              Recadrage de l’empreinte…
             </p>
           </div>
         </div>
-        <p v-if="resultat && !occupe" class="absolute bottom-5 left-5 text-[13px] text-txt">
+        <p v-if="alliance && !occupe" class="absolute bottom-5 left-5 text-[13px] text-txt">
           Faites tourner la bague du doigt ou de la souris.
         </p>
       </div>
@@ -362,10 +387,10 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
                Le fichier ne quitte le serveur que pour l'atelier (/atelier). -->
           <button
             type="button" class="btn-primary mt-6 w-full"
-            :disabled="!resultat?.apercu || occupe"
+            :disabled="!alliance || occupe"
             @click="fenetreEnvoi?.ouvrir()"
           >
-            {{ resultat?.apercu ? 'Envoyer ma bague à l’atelier' : 'Ajoutez d’abord votre empreinte' }}
+            {{ alliance ? 'Envoyer ma bague à l’atelier' : 'Ajoutez d’abord votre empreinte' }}
           </button>
           <FenetreEnvoi ref="fenetreEnvoi" :resume="resume" :envoyer="envoyer" />
         </section>

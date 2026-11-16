@@ -436,3 +436,23 @@ def image_edition(emp: Empreinte, chemin):
         "largeur_bande_px": float(b.largeur_px),
         "mm_par_px": float(emp.mm_par_px),
     }
+
+
+FACTEUR_TEXTURE = 3.0
+
+
+def texture_relief(emp: Empreinte, chemin):
+    """Le relief traité, pour le navigateur qui construit la bague lui-même.
+
+    L'agrandi ×6 sert au seuillage ; pour échantillonner 40 à 50 points sur
+    1,5 mm, ×3 suffit largement et pèse quatre fois moins. PNG 8 bits, ligne 0
+    en haut (y le plus grand). Le navigateur passe d'un pixel d'origine (x, y
+    vers le haut) à la texture par : col = (x − x0 + ½)·f − ½, ligne
+    haut = (y − y0 + ½)·f − ½, ligne PNG = hauteur − 1 − ligne haut."""
+    f = min(FACTEUR_TEXTURE, emp.facteur)
+    r = ndi.zoom(emp.relief, f / emp.facteur, order=1, grid_mode=True, mode="nearest")
+    f_eff = r.shape[1] / (emp.relief.shape[1] / emp.facteur)
+    img = (np.clip(r, 0, 1)[::-1] * 255 + 0.5).astype(np.uint8)
+    Image.fromarray(img).save(chemin, optimize=True)
+    return {"image": Path(chemin).name, "largeur": int(img.shape[1]), "hauteur": int(img.shape[0]),
+            "x0": int(emp.origine[0]), "y0": int(emp.origine[1]), "facteur": float(f_eff)}

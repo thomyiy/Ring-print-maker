@@ -1,8 +1,9 @@
-/** `analyser` (empreinte seule, rapide) ou `generer` (STL et contrôles). */
+/** `preparer` (page client : empreinte traitée, la bague se construit dans le
+ *  navigateur), `analyser` (atelier : empreinte et figures) ou `generer` (STL). */
 export default defineEventHandler(async (event) => {
-  const corps = await readBody<{ id: string; action: 'analyser' | 'generer'; leger?: boolean; params: Record<string, unknown> }>(event)
+  const corps = await readBody<{ id: string; action: 'analyser' | 'preparer' | 'generer'; leger?: boolean; params: Record<string, unknown> }>(event)
   const dossier = dossierSession(corps.id)
-  const action = corps.action === 'generer' ? 'generer' : 'analyser'
+  const action = (['analyser', 'preparer', 'generer'] as const).includes(corps.action) ? corps.action : 'analyser'
   const sous = `${action}-${Date.now().toString(36)}`
   const sortie = `${dossier}/${sous}`
   const params = await ecrireParams(sortie, corps.params)

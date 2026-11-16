@@ -17,12 +17,25 @@ perdue.
 - **`/atelier`, l'outil complet** : cadrage de la bande, traitement de l'image, forme du fil,
   maillage de fabrication, rendus de contrôle, masque et bande déroulée, et tous les contrôles.
 
+## Qui calcule quoi
+
+- **Le navigateur construit la bague** (`shared/alliance.ts`, affichée avec three.js) : taille,
+  fil, relief, échelle et placement de l'empreinte se recalculent en ~40 ms, sans serveur.
+- **Le moteur Python traite l'empreinte une fois** (`python -m moteur preparer`) : seuillage,
+  échelle, cadrage automatique, et une texture de relief que le navigateur échantillonne.
+- **Le moteur Python refait le fichier de fabrication** à l'envoi, avec les mêmes paramètres,
+  et fait les contrôles (étanchéité, normales, Ø intérieur, raccord).
+
+⚠️ `shared/alliance.ts` est la traduction de `moteur/alliance.py`. Toute retouche de l'un se
+refait dans l'autre : `npm test` compare les deux sommet par sommet.
+
 ## Lancer
 
 ```bash
 pip install -r requirements.txt
 npm install
 npm run dev
+npm test        # la géométrie du navigateur contre celle de Python
 ```
 
 Le moteur s'utilise aussi seul, en ligne de commande :
