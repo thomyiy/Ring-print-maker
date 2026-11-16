@@ -14,6 +14,8 @@ perdue.
   tourne, on peut la raccourcir (longueur libre) ou la laisser bord à bord. Le bouton final
   **envoie** la bague à l'atelier : une fenêtre demande le nom de la pièce et les
   coordonnées, le serveur recalcule le STL en qualité fabrication et range la fiche.
+- **`/joia`, `/joia/chevaliere`, `/joia/medaille`** : les mêmes pages en marque blanche pour
+  Joia Bijou (logo, nom, favicon), sans lien vers l'atelier ; chaque envoi porte la marque.
 - **`/atelier`, l'outil complet** : cadrage de la bande, traitement de l'image, forme du fil,
   maillage de fabrication, rendus de contrôle, masque et bande déroulée, et tous les contrôles.
 
@@ -38,6 +40,19 @@ l'échelle réelle sur l'empreinte.
 
 ⚠️ `shared/chevaliere.ts` est la traduction de `moteur/chevaliere.py` : `npm test` compare
 les deux reliefs sommet par sommet, triangle par triangle.
+
+## La médaille (`/medaille`)
+
+Les 12 médailles du configurateur (12, 16 ou 20 mm), avec l'empreinte en relief sur la face.
+Le configurateur n'a pas de maillage de médaille : on la construit depuis le contour de
+`catalog-medaille.json`, réglée sur ce qu'il publie — 1,4 mm d'épaisseur, bord adouci, trou de
+bélière Ø 1,5 mm (évidement central Ø taille/4 pour le Cercle). Le volume retombe sur celui du
+catalogue à 1 % près pour les 12 formes (anneau de bélière compté à part, ≈ 6,5 mm³).
+
+L'empreinte se place comme une gravure du configurateur (`EditeurGravure.vue`, partagé avec la
+chevalière) : image déplacée, agrandie par les coins, tournée par la poignée, modes « Dans le
+plateau » et « Plateau dans l'image ». L'écart des crêtes qui en découle est affiché, avec une
+alerte sous 0,25 mm.
 
 ## Qui calcule quoi
 

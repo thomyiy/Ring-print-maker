@@ -143,13 +143,14 @@ def _sans_diagonales(cel):
         cel[:-1, :-1] |= diag2
 
 
-def relief_solide(zone, emprise, hauteur_de, base, pas):
+def relief_solide(zone, emprise, hauteur_de, base, pas, trou=None):
     """Le relief en solide fermé, sur une grille de pas `pas`.
 
     zone     : contour (u, v) où les crêtes peuvent monter ;
     emprise  : contour (u, v) des cellules gardées (≥ zone : au-delà, hauteur 0,
                noyé dans le métal) ;
-    hauteur_de(u, v) → hauteur en mm au-dessus de `base` (y du fond).
+    hauteur_de(u, v) → hauteur en mm au-dessus de `base` (y du fond) ;
+    trou     : (u, v, rayon) à laisser libre — la bélière d'une médaille.
     Rendu : V (n, 3) dans le repère du maillage, F (m, 3), volume au-dessus de
     `base`."""
     umin, vmin = emprise.min(0) - pas
@@ -160,6 +161,10 @@ def relief_solide(zone, emprise, hauteur_de, base, pas):
     P = np.stack([U.ravel(), Vv.ravel()], 1)
     dans_emprise = dans_polygone(P, emprise).reshape(nu, nv)
     dans_zone = dans_polygone(P, zone).reshape(nu, nv)
+    if trou is not None:
+        hors = (np.hypot(P[:, 0] - trou[0], P[:, 1] - trou[1]) > trou[2]).reshape(nu, nv)
+        dans_emprise &= hors
+        dans_zone &= hors
     cel = dans_emprise[:-1, :-1] & dans_emprise[1:, :-1] & dans_emprise[:-1, 1:] & dans_emprise[1:, 1:]
     cel = _sans_diagonales(cel)
 

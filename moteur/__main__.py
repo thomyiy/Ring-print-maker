@@ -131,6 +131,46 @@ def chevaliere(image, p, brut, sortie: Path):
     return out
 
 
+def medaille(image, p, brut, sortie: Path):
+    """La médaille : corps construit depuis le contour du catalogue, relief de
+    l'empreinte sur la face, en un seul solide fermé."""
+    from . import medaille as Md
+    import trimesh
+    emp = E.preparer(image, p)
+    q = {
+        "forme": str(brut.get("forme", "LUN")),
+        "taille": int(brut.get("taille_medaille", 16)),
+        "hauteur_relief": float(p["hauteur_relief"]),
+        "periode_mm": float(brut.get("periode_mm", 0.45)),
+        "placement_px": [float(x) for x in brut.get("placement_px") or [0, 0, 0]],
+    }
+    r = Md.construire(q, emp)
+    A.ecrire_stl(sortie / "medaille.stl", r["V"], r["F"])
+    m = trimesh.Trimesh(r["V"], r["F"], process=False)
+    ctrl = {
+        "etanche": bool(m.is_watertight),
+        "orientation_coherente": bool(m.is_winding_consistent),
+        "statut_union": r["statut"],
+        "volume_mm3": r["volume_mm3"],
+        "volume_base_mm3": r["volume_base_mm3"],
+        "volume_relief_mm3": r["volume_relief_mm3"],
+        "volume_catalogue_mm3": r["volume_catalogue_mm3"],
+        "poids_or_750_g": r["volume_mm3"] / 1000 * p["densite_or"],
+        "poids_argent_925_g": r["volume_mm3"] / 1000 * p["densite_argent"],
+        "triangles": int(len(r["F"])),
+    }
+    out = {"stl": "medaille.stl", "controles": ctrl, "choix": q, "forme": r["forme"],
+           "avertissements": emp.avertissements, "images": {}}
+    if not brut.get("sans_rendu"):
+        from . import rendu
+        rendu.rendre(r["V"], r["F"], direction=(0, 1, 0), haut=(0, 0, 1), largeur_px=1200).save(sortie / "rendu_general.png")
+        rendu.rendre(r["V"], r["F"], direction=(0.5, 0.8, 0.6), haut=(0, 1, 0), largeur_px=1200).save(sortie / "rendu_dessus.png")
+        out["images"] = {"general": "rendu_general.png", "dessus": "rendu_dessus.png"}
+    if not ctrl["etanche"]:
+        out["avertissements"].append("Maillage non étanche.")
+    return out
+
+
 def generer(image, p, sortie: Path, leger=False):
     """`leger` : l'aperçu de la page client. Ni figures, ni rendus, ni STL :
     une grille de sommets en float32 (`apercu.bin`), huit fois plus légère, que
@@ -172,7 +212,7 @@ def generer(image, p, sortie: Path, leger=False):
 
 def _arguments():
     ap = argparse.ArgumentParser(prog="moteur")
-    ap.add_argument("action", choices=["schema", "analyser", "preparer", "generer", "chevaliere", "demo", "synthetique", "serveur"])
+    ap.add_argument("action", choices=["schema", "analyser", "preparer", "generer", "chevaliere", "medaille", "demo", "synthetique", "serveur"])
     ap.add_argument("--image")
     ap.add_argument("--params")
     ap.add_argument("--sortie", default="sortie")
@@ -202,6 +242,8 @@ def executer(argv) -> dict:
         out = preparer(image, p, sortie)
     elif a.action == "chevaliere":
         out = chevaliere(image, p, brut, sortie)
+    elif a.action == "medaille":
+        out = medaille(image, p, brut, sortie)
     else:
         out = generer(image, p, sortie, a.leger)
     (sortie / "resultat.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))

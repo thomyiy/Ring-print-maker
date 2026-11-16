@@ -102,7 +102,7 @@ export interface Solide { positions: Float32Array; indices: Uint32Array; volume:
  *  des sommets et des triangles. */
 export function reliefSolide(
   zone: Point[], emprise: Point[], hauteurDe: (u: number, v: number) => number,
-  base: number, pas: number,
+  base: number, pas: number, trou: [number, number, number] | null = null,
 ): Solide {
   let umin = Infinity, vmin = Infinity, umax = -Infinity, vmax = -Infinity
   for (const [u, v] of emprise) {
@@ -120,8 +120,10 @@ export function reliefSolide(
   for (let i = 0; i < nu; i++) {
     for (let j = 0; j < nv; j++) {
       const u = U(i), v = V(j)
-      dansEmprise[at(i, j)] = dansPolygone(u, v, emprise) ? 1 : 0
-      if (dansPolygone(u, v, zone)) H[at(i, j)] = hauteurDe(u, v)
+      // Le trou (bélière d'une médaille) reste libre : ni emprise ni crête.
+      const hors = !trou || Math.hypot(u - trou[0], v - trou[1]) > trou[2]
+      dansEmprise[at(i, j)] = hors && dansPolygone(u, v, emprise) ? 1 : 0
+      if (hors && dansPolygone(u, v, zone)) H[at(i, j)] = hauteurDe(u, v)
     }
   }
   const nci = nu - 1, ncj = nv - 1

@@ -14,6 +14,7 @@ import { dirname, join, resolve } from 'node:path'
  */
 const AUTORISE = [
   /^catalog-chevaliere\.json$/,
+  /^catalog-medaille\.json$/,
   /^rings\/[A-Z]{2,4}\/\d{1,2}\/(creuse|pleine)\/\d{3}\/(lisse|creux)\.jrm$/,
 ]
 

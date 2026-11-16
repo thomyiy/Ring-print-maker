@@ -81,3 +81,19 @@ a, b, c = Vw[Fw[:, 0]], Vw[Fw[:, 1]], Vw[Fw[:, 2]]
 chev["jrm_volume"] = float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6)
 out["chevaliere"] = chev
 (sortie / "geometrie.json").write_text(json.dumps(out))
+
+# — Médaille : le corps et le relief avec trou ———————————————————————
+from moteur import medaille as Md  # noqa: E402
+
+catm = Md.catalogue()
+med = {"corps": []}
+for fid, mm in (("LUN", 12), ("GOU", 16), ("QTF", 20), ("CER", 16)):
+    f, t = Md.variante(catm, fid, mm)
+    med["corps"].append({"forme": f, "taille": t, "volume": float(Md.corps(t, 1.4, f).volume())})
+f, t = Md.variante(catm, "GOU", 16)
+zone = Md.zone_relief(t)
+tr = Md.trou_centre(t, f)
+V, F, vol = C.relief_solide(zone, zone, hauteur, 0.0, 0.1, (tr[0], tr[1], tr[2] + Md.MARGE_TROU))
+med["relief"] = {"taille": t, "forme": f, "positions": V.ravel().tolist(), "indices": F.ravel().tolist(), "volume": vol}
+out["medaille"] = med
+(sortie / "geometrie.json").write_text(json.dumps(out))

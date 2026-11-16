@@ -17,6 +17,8 @@ const props = defineProps<{
   pieces?: Piece[] | null
   teinte: number
   fond?: number
+  /** D'où la caméra regarde au départ (la médaille se regarde de face). */
+  direction?: [number, number, number]
 }>()
 const hote = ref<HTMLDivElement>()
 const chargement = ref(false)
@@ -52,7 +54,16 @@ function taille() {
   camera.updateProjectionMatrix()
 }
 
-onMounted(() => {
+onMounted(demarrer)
+
+// ⚠️ SON CADRE PEUT N'ÊTRE PAS ENCORE LÀ AU MONTAGE. Sur la page médaille, prête
+// dès l'hydratation, la référence au cadre était vide dans `onMounted` : la vue
+// tombait en erreur, puis restait vide sans un mot. On réessaie à l'image
+// suivante tant que le cadre n'existe pas — et tant que le composant vit.
+let arrete = false
+function demarrer() {
+  if (arrete) return
+  if (!hote.value) { requestAnimationFrame(demarrer); return }
   renderer = new WebGLRenderer({ antialias: true })
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
   renderer.outputColorSpace = SRGBColorSpace
@@ -73,9 +84,9 @@ onMounted(() => {
   if (props.url) charger(props.url)
   if (props.maillage) poser(props.maillage)
   if (props.pieces) poserPieces(props.pieces)
-})
+}
 
-onBeforeUnmount(() => { cancelAnimationFrame(anim); renderer?.dispose() })
+onBeforeUnmount(() => { arrete = true; cancelAnimationFrame(anim); renderer?.dispose() })
 
 /** STL : une soupe de triangles. On soude les sommets pour lisser l'éclairage,
  *  sinon le fil paraît facetté à l'écran alors qu'il ne l'est pas. */
@@ -156,7 +167,7 @@ function cadrer(objet: Object3D) {
   controls.target.copy(c)
   const r = b.getSize(new Vector3()).length()
   // Vue de départ : en biais et par-dessus, l'empreinte face au regard.
-  camera.position.copy(c).add(new Vector3(0.45, 0.85, 0.75).normalize().multiplyScalar(r * 1.75))
+  camera.position.copy(c).add(new Vector3(...(props.direction ?? [0.45, 0.85, 0.75])).normalize().multiplyScalar(r * 1.75))
   redessiner()
 }
 

@@ -2,7 +2,7 @@ import { cp, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 interface Corps {
-  type?: 'alliance' | 'chevaliere'
+  type?: 'alliance' | 'chevaliere' | 'medaille'
   marque?: string
   id: string
   piece?: { nom?: string }
@@ -26,8 +26,9 @@ function slug(s: string) {
 export default defineEventHandler(async (event) => {
   const c = await readBody<Corps>(event)
   const dossierSource = dossierSession(c.id)
-  const chevaliere = c.type === 'chevaliere'
-  const nomPiece = nettoyer(c.piece?.nom, 80) || (chevaliere ? 'Chevalière empreinte' : 'Alliance empreinte')
+  const type = c.type === 'chevaliere' || c.type === 'medaille' ? c.type : 'alliance'
+  const DEFAUT = { alliance: 'Alliance empreinte', chevaliere: 'Chevalière empreinte', medaille: 'Médaille empreinte' }
+  const nomPiece = nettoyer(c.piece?.nom, 80) || DEFAUT[type]
   const contact = {
     nom: nettoyer(c.contact?.nom, 120),
     email: nettoyer(c.contact?.email, 200),
@@ -47,10 +48,10 @@ export default defineEventHandler(async (event) => {
   await mkdir(dossier, { recursive: true })
   await cp(join(dossierSource, 'source.png'), join(dossier, 'empreinte_source.png'))
 
-  const params = chevaliere ? { ...c.params } : { ...c.params, n_sections: 1440, n_face: 50 }
+  const params = type === 'alliance' ? { ...c.params, n_sections: 1440, n_face: 50 } : { ...c.params }
   const fichierParams = await ecrireParams(dossier, params)
   const r = await lancerMoteur([
-    chevaliere ? 'chevaliere' : 'generer',
+    type === 'alliance' ? 'generer' : type,
     '--image', join(dossier, 'empreinte_source.png'), '--params', fichierParams, '--sortie', dossier,
   ])
 
@@ -59,7 +60,7 @@ export default defineEventHandler(async (event) => {
     recu_le: d.toISOString(),
     piece: nomPiece,
     contact,
-    type: chevaliere ? 'chevaliere' : 'alliance',
+    type,
     // Pour qui l'atelier fabrique : 'raw', ou le client en marque blanche.
     marque: c.marque === 'joia' ? 'joia' : 'raw',
     choix: c.choix ?? {},

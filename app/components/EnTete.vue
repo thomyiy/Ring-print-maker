@@ -20,6 +20,7 @@ useHead({
       <nav class="flex items-center gap-5 text-[14px]">
         <NuxtLink :to="marque.base || '/'" class="lien-nav" exact-active-class="actif">Alliance</NuxtLink>
         <NuxtLink :to="`${marque.base}/chevaliere`" class="lien-nav" active-class="actif">Chevalière</NuxtLink>
+        <NuxtLink :to="`${marque.base}/medaille`" class="lien-nav" active-class="actif">Médaille</NuxtLink>
         <!-- L'atelier n'a rien à faire sur l'adresse d'un client. -->
         <NuxtLink v-if="marque.id === 'raw'" to="/atelier" class="text-[13px] text-muted hover:text-ink">Atelier</NuxtLink>
       </nav>
