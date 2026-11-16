@@ -225,6 +225,14 @@ export function lecteurRelief(
   }
 }
 
+export const RETRAIT_GODET = 0.1
+
+/** Voir `socle_godet` dans moteur/chevaliere.py : le fond du godet remonte,
+ *  et les crêtes s'arrêtent RETRAIT_GODET sous le bord. */
+export function socleGodet(t: TaillePlateau, hauteur: number): number {
+  return Math.max(0, t.cupDepth - hauteur - RETRAIT_GODET)
+}
+
 export interface ReliefChevaliere {
   solide: Solide
   base: number
@@ -237,18 +245,19 @@ export function reliefChevaliere(
   lire: (u: number, v: number) => number, pas: number,
 ): ReliefChevaliere {
   const plateau = contourCentre(taille, 'plateau')
-  let zone: Point[], emprise: Point[], base: number, hauteur: number
+  const hauteur = hauteurPlein
+  let zone: Point[], emprise: Point[], base: number, socle: number
   if (surface === 'godet') {
     zone = contourCentre(taille, 'cup')
     emprise = retrecir(plateau, 0.3)
     base = -taille.cupDepth
-    hauteur = taille.cupDepth
+    socle = socleGodet(taille, hauteur)
   } else {
     zone = retrecir(plateau, MARGE_PLEIN)
     emprise = zone
     base = 0
-    hauteur = hauteurPlein
+    socle = 0
   }
-  const solide = reliefSolide(zone, emprise, (u, v) => hauteur * lire(u, v), base, pas)
+  const solide = reliefSolide(zone, emprise, (u, v) => socle + hauteur * lire(u, v), base, pas)
   return { solide, base, hauteur }
 }

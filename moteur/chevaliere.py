@@ -210,6 +210,20 @@ def relief_solide(zone, emprise, hauteur_de, base, pas, trou=None):
     return V, F, float((hc * cel).sum() * pas * pas)
 
 
+RETRAIT_GODET = 0.1   # mm entre le haut des crêtes et le bord du godet
+
+
+def socle_godet(taille, hauteur):
+    """De combien le fond du godet remonte sous l'empreinte.
+
+    ⚠️ LES CRÊTES NE MONTENT PLUS DU FOND JUSQU'AU BORD. Elles faisaient alors
+    1 mm de haut pour 0,12 mm de large : des lames, illisibles à l'écran et
+    impossibles à couler (Thomas, 16/11/2026, sur une vraie empreinte). Le fond
+    remonte, les crêtes ont la hauteur choisie et s'arrêtent RETRAIT_GODET sous
+    le bord : le relief reste à l'abri des chocs, comme une gravure protégée."""
+    return max(0.0, float(taille["cupDepth"]) - hauteur - RETRAIT_GODET)
+
+
 # — Placement de l'empreinte ——————————————————————————————————————
 
 def lecteur_relief(emp, placement, mm_par_px):
@@ -243,19 +257,20 @@ def construire(p, emp):
     Vb, Fb = lire_jrm(_telecharger(chemin_maillage(p["forme"], p["plateau"], p["remplissage"], doigt_mesh, surface)))
 
     plateau = contour_centre(taille, "plateau")
+    hauteur = float(p["hauteur_relief"])
     if surface == "godet":
         zone = contour_centre(taille, "cup")
         emprise = retrecir(plateau, 0.3)
         base = -float(taille["cupDepth"])
-        hauteur = float(taille["cupDepth"])     # les crêtes affleurent au bord
+        socle = socle_godet(taille, hauteur)
     else:
         zone = retrecir(plateau, MARGE_PLEIN)
         emprise = zone
         base = 0.0
-        hauteur = float(p["hauteur_relief"])
+        socle = 0.0
     mm_par_px = p["periode_mm"] / emp.periode_px
     lire = lecteur_relief(emp, p["placement_px"], mm_par_px)
-    Vr, Fr, vol_relief = relief_solide(zone, emprise, lambda u, v: hauteur * lire(u, v), base,
+    Vr, Fr, vol_relief = relief_solide(zone, emprise, lambda u, v: socle + hauteur * lire(u, v), base,
                                        p.get("pas_relief", PAS_FABRICATION))
     m = mf.Manifold(mf.Mesh(Vb.astype(np.float32), Fb.astype(np.uint32))) + \
         mf.Manifold(mf.Mesh(Vr.astype(np.float32), Fr.astype(np.uint32)))

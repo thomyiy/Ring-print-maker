@@ -52,20 +52,63 @@ class Empreinte:
 # — Chargement ———————————————————————————————————————————————————
 
 def charger_gris(chemin) -> tuple[np.ndarray, list]:
+    """L'image en gris, recadrée sur l'empreinte, éclairage aplani, y en haut.
+
+    ⚠️ ON RECADRE AVANT DE RÉDUIRE. Une photo de téléphone fait 2160 × 3840 px
+    et l'empreinte n'en occupe qu'un tiers : réduite d'un bloc à 1 400 px, les
+    crêtes tombaient à 4 px, le moteur prenait les taches d'encre pour des
+    crêtes (période lue : 61 px) et l'empreinte sortait douze fois trop petite,
+    en pâté sur la bague (Thomas, 16/11/2026, empreinte encrée sur papier). On
+    repère l'encre sur une vignette, on recadre l'original avec une marge, et on
+    ne réduit ce recadrage que s'il dépasse encore la taille maximale."""
+    from PIL import ImageOps
     avert = []
     im = Image.open(chemin)
+    im = ImageOps.exif_transpose(im)        # photo de téléphone : le bon sens
     if im.mode in ("RGBA", "LA", "P"):
         im = im.convert("RGBA")
         fond = Image.new("RGBA", im.size, (255, 255, 255, 255))
         fond.alpha_composite(im)
         im = fond
     im = im.convert("L")
+    W, H = im.size
+
+    # Où est l'encre : vignette, papier aplani, seuil d'Otsu, plus grande tache.
+    k = max(W, H) / 400
+    if k > 1:
+        v = np.asarray(im.resize((round(W / k), round(H / k)), Image.BILINEAR), float) / 255
+        fond_v = ndi.gaussian_filter(v, max(v.shape) / 12)
+        n = np.clip(v / np.maximum(fond_v, 1e-3), 0, 1.5)
+        hist, bords = np.histogram(n, 128, (0, 1.5))
+        w0 = np.cumsum(hist); w1 = w0[-1] - w0
+        m0 = np.cumsum(hist * bords[:-1]); mt = m0[-1]
+        var = w0 * w1 * (m0 / np.maximum(w0, 1) - (mt - m0) / np.maximum(w1, 1)) ** 2
+        seuil = bords[int(np.argmax(var))]
+        encre = ndi.binary_closing(n < seuil, iterations=3)
+        lab, nb = ndi.label(encre)
+        if nb:
+            tailles = ndi.sum(encre, lab, range(1, nb + 1))
+            tache = lab == 1 + int(np.argmax(tailles))
+            ys, xs = np.nonzero(tache)
+            # Recadrer seulement si l'encre n'occupe qu'une partie de l'image.
+            if ys.size and (np.ptp(ys) + 1) * (np.ptp(xs) + 1) < 0.6 * v.size:
+                mx = 0.15 * (np.ptp(xs) + 1); my = 0.15 * (np.ptp(ys) + 1)
+                x0 = max(0, int((xs.min() - mx) * k)); x1 = min(W, int((xs.max() + 1 + mx) * k))
+                y0 = max(0, int((ys.min() - my) * k)); y1 = min(H, int((ys.max() + 1 + my) * k))
+                im = im.crop((x0, y0, x1, y1))
+                avert.append(f"Photo recadrée sur l'empreinte ({x1 - x0}×{y1 - y0} px).")
+
     w, h = im.size
     f = max(w, h) / TAILLE_MAX_ENTREE
     if f > 1:
         im = im.resize((round(w / f), round(h / f)), Image.LANCZOS)
         avert.append(f"Image réduite de {w}×{h} à {im.size[0]}×{im.size[1]} px.")
     g = np.asarray(im, dtype=np.float64) / 255.0
+    # Papier aplani : une photo est plus sombre d'un côté que de l'autre, et un
+    # seuil unique y mangerait les crêtes du côté clair ou noierait le côté sombre.
+    fond = ndi.maximum_filter(ndi.gaussian_filter(g, 2), size=max(15, max(g.shape) // 25))
+    fond = ndi.gaussian_filter(fond, max(g.shape) / 30)
+    g = np.clip(g / np.maximum(fond, 0.05), 0, 1)
     return g[::-1].copy(), avert
 
 
@@ -107,7 +150,12 @@ def periode_cretes(cretes: np.ndarray, fg: np.ndarray) -> float:
     yy, xx = np.indices(P.shape)
     r = np.hypot(yy - N // 2, xx - N // 2).astype(int)
     prof = np.bincount(r.ravel(), P.ravel()) / np.maximum(np.bincount(r.ravel()), 1)
-    rmin, rmax = int(N / 60), int(N / 3)          # périodes de 3 à 60 px
+    # ⚠️ SEULEMENT DES PÉRIODES DE DOIGT. Une empreinte compte de 18 à 90
+    # crêtes sur sa largeur ; sans cette borne, les grandes taches d'une
+    # empreinte très encrée l'emportaient sur les crêtes (61 px lus pour 11).
+    largeur = max(c.shape)
+    pmin, pmax = max(3.0, largeur / 90), max(6.0, largeur / 18)
+    rmin, rmax = max(2, int(N / pmax)), min(len(prof) - 2, int(np.ceil(N / pmin)))
     k = rmin + int(np.argmax(prof[rmin:rmax]))
     # raffinement parabolique du pic
     if 1 <= k < len(prof) - 1:
@@ -218,7 +266,12 @@ def traiter_agrandi(g, fg, periode_px, mm_par_px, p, avert):
     y0, y1 = max(0, ys.min() - marge), min(g.shape[0], ys.max() + marge + 1)
     x0, x1 = max(0, xs.min() - marge), min(g.shape[1], xs.max() + marge + 1)
     crop = g[y0:y1, x0:x1]
-    f = float(p["agrandissement"])
+    # ⚠️ L'AGRANDISSEMENT SUIT LA FINESSE DES CRÊTES, PAS UN CHIFFRE FIXE. ×6
+    # servait les scans aux crêtes de 8 px ; une photo de téléphone recadrée en
+    # a déjà 20, et ×6 y faisait filtrer 28 millions de pixels — 25 s d'attente
+    # au dépôt (16/11/2026). Une crête n'a besoin que d'une cinquantaine de
+    # pixels pour que le seuil doux dessine ses flancs.
+    f = float(min(p["agrandissement"], max(1.0, 48.0 / periode_px)))
     if crop.size * f * f > PIXELS_MAX_AGRANDI:
         f2 = float(np.sqrt(PIXELS_MAX_AGRANDI / crop.size))
         avert.append(f"Agrandissement ramené de ×{f:g} à ×{f2:.1f} (image trop grande).")

@@ -149,7 +149,9 @@ watch(
       image = 0
       if (!texture.value || !taille.value || !prep.value) return
       const lire = lecteurRelief(placement.value, mmParPx.value, prep.value.hauteur_image, texture.value)
-      relief.value = reliefChevaliere(taille.value, choix.surface, choix.hauteur, lire, 0.06)
+      // 0,04 mm : une empreinte entière dans le godet a des crêtes de 0,25 mm ; à
+      // 0,06 mm l'aperçu n'en prenait que 4 points et sortait bruité.
+      relief.value = reliefChevaliere(taille.value, choix.surface, choix.hauteur, lire, 0.04)
     })
   },
   { deep: true },
@@ -189,7 +191,7 @@ const fenetreEnvoi = ref<{ ouvrir: () => void } | null>(null)
 const resume = computed(() => [
   `Chevalière empreinte · ${forme.value?.name ?? ''} ${choix.plateau} mm`,
   choix.remplissage === 'creuse' ? 'creuse' : 'pleine',
-  choix.surface === 'godet' ? 'empreinte dans le godet' : `empreinte en relief ${f(choix.hauteur, 2)} mm`,
+  `${choix.surface === 'godet' ? 'empreinte dans le godet' : 'empreinte sur le plateau'}, relief ${f(choix.hauteur, 2)} mm`,
   depot.value ? `crêtes ${f(periodeMm.value, 2)} mm` : null,
   metal.value?.name, `taille ${choix.doigt}`,
 ].filter(Boolean).join(' · '))
@@ -343,7 +345,7 @@ const occupe = computed(() => etat.value === 'envoi' || etat.value === 'preparat
               @click="choix.surface = 'godet'"
             >
               <span class="block text-[14px] text-ink">Dans le godet</span>
-              <span class="block text-[12px] text-txt">Plateau creusé, les crêtes affleurent au bord</span>
+              <span class="block text-[12px] text-txt">Plateau creusé, le relief juste sous le bord, à l’abri des chocs</span>
             </button>
             <button
               type="button" class="bg-paper px-3 py-3 text-left"
@@ -354,7 +356,7 @@ const occupe = computed(() => etat.value === 'envoi' || etat.value === 'preparat
               <span class="block text-[12px] text-txt">Plateau plein, les crêtes en saillie</span>
             </button>
           </div>
-          <div v-if="choix.surface === 'plein'" class="mt-3 grid grid-cols-3 gap-px border border-line bg-line">
+          <div class="mt-3 grid grid-cols-3 gap-px border border-line bg-line">
             <button
               v-for="r in RELIEFS_PLEIN" :key="r.h" type="button" class="bg-paper px-3 py-3 text-center"
               :class="choix.hauteur === r.h ? 'outline outline-2 -outline-offset-2 outline-ink' : 'hover:bg-paper-2'"
