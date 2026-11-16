@@ -467,8 +467,13 @@ def image_edition(emp: Empreinte, chemin):
     On n'affiche pas la photo envoyée : le navigateur applique l'orientation
     EXIF d'un JPEG, Pillow non — les deux images ne se superposeraient pas."""
     H, W = emp.gris.shape
-    pas = emp.facteur
-    petit = emp.relief[::max(1, int(round(pas))), ::max(1, int(round(pas)))]
+    # ⚠️ RAMENÉ À LA TAILLE D'ORIGINE PAR UN VRAI REDIMENSIONNEMENT, PAS UN PAS
+    # DE SAUT. Prendre un pixel sur round(facteur) ne marchait qu'avec un
+    # agrandissement entier ; à ×2,4 l'empreinte ressortait 1,2 fois trop grande
+    # et coupée à droite et en haut de l'éditeur (Thomas, 16/11/2026).
+    hc = int(round(emp.relief.shape[0] / emp.facteur))
+    wc = int(round(emp.relief.shape[1] / emp.facteur))
+    petit = ndi.zoom(emp.relief, (hc / emp.relief.shape[0], wc / emp.relief.shape[1]), order=1, grid_mode=True, mode="nearest")
     x0, y0 = emp.origine
     toile = np.zeros((H, W))
     h = min(petit.shape[0], H - y0)
