@@ -9,7 +9,7 @@
 <script setup lang="ts">
 import type { TextureRelief } from '~~/shared/alliance'
 import {
-  contourCentre, lecteurRelief, lireJrm, reliefChevaliere, type MaillageJrm, type TaillePlateau,
+  contourCentre, lecteurRelief, lireJrm, MARGE_PLEIN, reliefChevaliere, retrecir, type MaillageJrm, type TaillePlateau,
 } from '~~/shared/chevaliere'
 import type { Piece } from '~~/shared/piece'
 
@@ -24,11 +24,6 @@ const metaux = computed(() => {
   return (produit.value?.metals ?? []).map((m: any) => tous.find((t: any) => t.id === m.id)).filter(Boolean)
 })
 
-const ECHELLES = [
-  { periode: 0.45, nom: 'Taille réelle' },
-  { periode: 0.32, nom: 'Réduite' },
-  { periode: 0.22, nom: 'Très fine' },
-]
 const RELIEFS_PLEIN = [
   { h: 0.2, nom: 'Délicat', detail: '0,20 mm' },
   { h: 0.3, nom: 'Marqué', detail: '0,30 mm' },
@@ -36,7 +31,7 @@ const RELIEFS_PLEIN = [
 ]
 const choix = reactive({
   forme: 'ECU', plateau: 14, remplissage: 'creuse' as 'creuse' | 'pleine',
-  surface: 'godet' as 'godet' | 'plein', hauteur: 0.3, doigt: 55, metal: 'or18j', periode: 0.45,
+  surface: 'godet' as 'godet' | 'plein', hauteur: 0.3, doigt: 55, metal: 'or18j',
 })
 
 const forme = computed(() => produit.value?.shapes.find((s: any) => s.id === choix.forme))
@@ -98,7 +93,7 @@ async function deposer(fichier?: File | null, demo = false) {
     depot.value = await $fetch('/api/empreinte' + (demo ? '?demo=1' : ''), { method: 'POST', body: fd })
     etat.value = 'preparation'
     const r = await $fetch<any>('/api/calcul', {
-      method: 'POST', body: { id: depot.value!.id, action: 'preparer', params: { periode_mm: choix.periode } },
+      method: 'POST', body: { id: depot.value!.id, action: 'preparer', params: { periode_mm: 0.45 } },
     })
     const img = new Image()
     img.src = r.images.relief
@@ -115,6 +110,10 @@ async function deposer(fichier?: File | null, demo = false) {
     }
     prep.value = r
     placement.value = [r.centre_empreinte[0], r.centre_empreinte[1], 0]
+    mmParPx.value = 0.45 / r.periode_px
+    // Comme le configurateur : l'empreinte arrive entière, dans le plateau.
+    await nextTick()
+    editeur.value?.recentrer()
     etat.value = 'pret'
   } catch (e: any) {
     etat.value = 'erreur'
@@ -126,7 +125,18 @@ async function deposer(fichier?: File | null, demo = false) {
 }
 
 // — Le relief, construit ici ————————————————————————————————————————
-const mmParPx = computed(() => (prep.value ? choix.periode / prep.value.periode_px : 0))
+// L'échelle (mm par pixel) et le placement viennent de l'éditeur de gravure ;
+// l'écart des crêtes sur la bague en découle (échelle × période en pixels).
+const mmParPx = ref(0.05)
+const modeGravure = ref<'dans' | 'couvre'>('dans')
+const editeur = ref<{ recentrer: () => void } | null>(null)
+const periodeMm = computed(() => (prep.value ? mmParPx.value * prep.value.periode_px : 0.45))
+// Une autre forme, un autre plateau ou un autre relief : l'empreinte se
+// recale dans la nouvelle zone, comme au premier dépôt.
+watch(() => [choix.forme, choix.plateau, choix.surface], async () => {
+  await nextTick()
+  editeur.value?.recentrer()
+})
 const relief = shallowRef<ReturnType<typeof reliefChevaliere> | null>(null)
 let image = 0
 // Une reconstruction par image au plus : glisser le plateau envoie des dizaines
@@ -156,7 +166,10 @@ const pieces = computed<Piece[] | null>(() => {
 })
 
 const contourPlateau = computed(() => (taille.value ? contourCentre(taille.value, 'plateau') : []))
-const contourGodet = computed(() => (taille.value && choix.surface === 'godet' ? contourCentre(taille.value, 'cup') : null))
+const zoneGravure = computed(() => {
+  if (!taille.value) return []
+  return choix.surface === 'godet' ? contourCentre(taille.value, 'cup') : retrecir(contourPlateau.value, MARGE_PLEIN)
+})
 
 // — Poids ————————————————————————————————————————————————————————
 // Le catalogue donne le volume de chaque maillage ; le relief s'y ajoute.
@@ -177,7 +190,7 @@ const resume = computed(() => [
   `Chevalière empreinte · ${forme.value?.name ?? ''} ${choix.plateau} mm`,
   choix.remplissage === 'creuse' ? 'creuse' : 'pleine',
   choix.surface === 'godet' ? 'empreinte dans le godet' : `empreinte en relief ${f(choix.hauteur, 2)} mm`,
-  ECHELLES.find((e) => e.periode === choix.periode)?.nom.toLowerCase(),
+  depot.value ? `crêtes ${f(periodeMm.value, 2)} mm` : null,
   metal.value?.name, `taille ${choix.doigt}`,
 ].filter(Boolean).join(' · '))
 
@@ -193,7 +206,7 @@ async function envoyer(fo: { nom_piece: string; nom: string; email: string; tele
       choix: { resume: resume.value, metalNom: metal.value?.name, poids_g: poids(metal.value?.density ?? 0) },
       params: {
         forme: choix.forme, plateau: choix.plateau, remplissage: choix.remplissage, doigt: choix.doigt,
-        surface: choix.surface, hauteur_relief: choix.hauteur, periode_mm: choix.periode,
+        surface: choix.surface, hauteur_relief: choix.hauteur, periode_mm: periodeMm.value,
         placement_px: placement.value,
       },
     },
@@ -308,23 +321,13 @@ const occupe = computed(() => etat.value === 'envoi' || etat.value === 'preparat
 
           <template v-if="prep && taille">
             <span class="champ-intitule mt-6">Placement sur le plateau</span>
-            <EditeurPlateau
-              v-model="placement" class="mt-2"
+            <EditeurGravure
+              ref="editeur" v-model:placement="placement" v-model:mm-par-px="mmParPx" v-model:mode="modeGravure"
+              class="mt-2"
               :image="prep.images.edition" :largeur="prep.edition.largeur" :hauteur="prep.edition.hauteur"
-              :contour="contourPlateau" :godet="contourGodet" :mm-par-px="mmParPx"
+              :boite="prep.boite_empreinte" :contour="contourPlateau" :zone="zoneGravure" :periode-px="prep.periode_px"
             />
           </template>
-
-          <span class="champ-intitule mt-6">Taille de l’empreinte</span>
-          <div class="mt-2 grid grid-cols-3 gap-px border border-line bg-line">
-            <button
-              v-for="e in ECHELLES" :key="e.periode" type="button" class="bg-paper px-3 py-3 text-[14px]"
-              :class="choix.periode === e.periode ? 'outline outline-2 -outline-offset-2 outline-ink' : 'hover:bg-paper-2'"
-              @click="choix.periode = e.periode"
-            >
-              {{ e.nom }}
-            </button>
-          </div>
         </section>
 
         <!-- 3. Le relief -->

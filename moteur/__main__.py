@@ -70,6 +70,13 @@ def preparer(image, p, sortie: Path):
         "hauteur_image": int(emp.gris.shape[0]),
         # Le milieu de l'empreinte, en pixels d'édition (y vers le bas) : là
         # où la chevalière pose son plateau au départ.
+        # Le cadre de l'empreinte, en pixels d'édition (x0, y0, x1, y1, y vers
+        # le bas) : l'éditeur de gravure le montre en pointillé et s'en sert
+        # pour « dans le plateau » et « plateau dans l'image ».
+        "boite_empreinte": [float(np.nonzero(emp.support)[1].min()),
+                            float(emp.gris.shape[0] - 1 - np.nonzero(emp.support)[0].max()),
+                            float(np.nonzero(emp.support)[1].max()),
+                            float(emp.gris.shape[0] - 1 - np.nonzero(emp.support)[0].min())],
         "centre_empreinte": [float(np.nonzero(emp.support)[1].mean()),
                              float(emp.gris.shape[0] - 1 - np.nonzero(emp.support)[0].mean())],
         "images": {"edition": "edition.png", "relief": "relief.png"},
