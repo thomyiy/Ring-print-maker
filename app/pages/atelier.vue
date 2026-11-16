@@ -7,9 +7,6 @@ const { data: schema } = await useFetch<Schema & { ok: boolean }>('/api/schema')
 const r = reactive({
   taille: 54,
   hauteur_relief: 0.18,
-  zone_auto: true,
-  angle_bande_deg: 90,
-  decalage_bande: 0,
   cote: 1.8,
   rayon_arete: 0.15,
   torsion_deg: 180,
@@ -29,15 +26,19 @@ const r = reactive({
 // modifiable à la main après coup, pour les tables d'atelier qui arrondissent autrement.
 const diametre = ref(17.2)
 watch(() => r.taille, (t) => { diametre.value = Math.round((t / Math.PI) * 10) / 10 })
+// Le placement : null = automatique, sinon les deux bouts posés dans l'éditeur.
+const bandePx = ref<[number, number, number, number] | null>(null)
+const bordABord = ref(true)
 const borne = (k: string) => schema.value?.[k] ?? { min: 0, max: 1, pas: 0.01, unite: '' }
 
 function params() {
-  const { zone_auto, qualite, ...reste } = r
+  const { qualite, ...reste } = r
   return {
     ...reste,
     diametre_interieur: diametre.value,
-    angle_bande_deg: zone_auto ? null : r.angle_bande_deg,
-    decalage_bande: zone_auto ? 0 : r.decalage_bande,
+    angle_bande_deg: null,
+    bande_px: bandePx.value,
+    bord_a_bord: bordABord.value,
     n_sections: qualite === 'fabrication' ? 1440 : 720,
     n_face: qualite === 'fabrication' ? 50 : 26,
   }
@@ -56,6 +57,10 @@ async function deposer(fichier?: File) {
     if (fichier) fd.append('image', fichier)
     depot.value = await $fetch('/api/empreinte' + (fichier ? '' : '?demo=1'), { method: 'POST', body: fd })
     resultat.value = null
+    // Les bouts posés sur l'empreinte précédente ne veulent rien dire ici.
+    bandePx.value = null
+    bordABord.value = true
+    onglet.value = 'placer'
     await analyser()
   } catch (e: any) {
     erreur.value = e?.data?.statusMessage ?? e?.statusMessage ?? String(e)
@@ -91,12 +96,6 @@ async function analyser() {
   enAnalyse.value = false
   if (a) {
     analyse.value = a
-    // Quand la zone est automatique, on reprend ce qu'elle a trouvé : passer
-    // en manuel part de là au lieu de repartir de zéro.
-    if (r.zone_auto) {
-      r.angle_bande_deg = Math.round(a.bande.angle_deg)
-      r.decalage_bande = Math.round(a.bande.decalage_mm * 20) / 20
-    }
   }
 }
 
@@ -113,7 +112,7 @@ async function generer() {
 
 // Les réglages qui touchent l'empreinte relancent l'analyse, un peu après.
 const cleAnalyse = computed(() => JSON.stringify([
-  r.zone_auto, r.zone_auto ? 0 : r.angle_bande_deg, r.zone_auto ? 0 : r.decalage_bande,
+  bandePx.value, bordABord.value,
   r.cote, r.rayon_arete, r.cretes_largeur, r.flou, r.douceur, r.aire_min_mm2,
   r.agrandissement, r.cretes_noires, r.miroir, r.hauteur_relief,
 ]))
@@ -126,10 +125,11 @@ const perime = computed(() => resultat.value && JSON.stringify(resultat.value.pa
 watch(resultat, (g) => { if (g) g.parametres_envoyes = params() })
 
 // — Affichage ————————————————————————————————————————————————————
-const onglet = ref<'apercu' | 'general' | 'dessus' | 'relief' | 'masque' | 'bande'>('masque')
+const onglet = ref<'placer' | 'apercu' | 'general' | 'dessus' | 'relief' | 'masque' | 'bande'>('placer')
 const metal = ref<'or' | 'argent'>('or')
 const vue3d = ref<{ vue: (n: 'dessus' | 'face' | 'biais') => void } | null>(null)
 const ONGLETS = [
+  { cle: 'placer', nom: 'Placer la bande', faut: 'edition' },
   { cle: 'apercu', nom: '3D', faut: 'stl' },
   { cle: 'general', nom: 'Vue générale', faut: 'general' },
   { cle: 'dessus', nom: 'Dessus, portée', faut: 'dessus' },
@@ -137,6 +137,9 @@ const ONGLETS = [
   { cle: 'masque', nom: 'Empreinte et cadre', faut: 'masque' },
   { cle: 'bande', nom: 'Bande déroulée', faut: 'bande' },
 ] as const
+const edition = computed(() => analyse.value?.edition
+  ? { ...analyse.value.edition, image: analyse.value.images.edition }
+  : null)
 const images = computed(() => ({ ...(analyse.value?.images ?? {}), ...(resultat.value?.images ?? {}) }))
 function dispo(faut: string) {
   return faut === 'stl' ? !!resultat.value?.stl : !!images.value[faut]
@@ -207,17 +210,12 @@ const b = computed(() => analyse.value?.bande)
             />
             <div>
               <span class="champ-intitule">Zone de l’empreinte</span>
-              <div class="mt-2 flex gap-5 text-[14px]">
-                <label class="flex items-center gap-2"><input v-model="r.zone_auto" type="radio" :value="true"> Automatique</label>
-                <label class="flex items-center gap-2"><input v-model="r.zone_auto" type="radio" :value="false"> Je cadre</label>
-              </div>
-              <p class="mt-1 text-[13px] text-txt">
-                La bande en biais où les crêtes filent dans la longueur, d’un bord à l’autre de l’empreinte.
+              <p class="mt-2 text-[13px] text-txt">
+                La bande en biais où les crêtes filent dans la longueur, d’un bord à l’autre de
+                l’empreinte. Elle se pose à la main dans l’onglet
+                <button class="lien" @click="onglet = 'placer'">Placer la bande</button>.
               </p>
-              <div v-if="!r.zone_auto" class="mt-4 space-y-4">
-                <Reglage v-model="r.angle_bande_deg" libelle="Angle" :min="0" :max="179" :pas="1" unite="°" />
-                <Reglage v-model="r.decalage_bande" libelle="Décalage latéral" :min="-6" :max="6" :pas="0.05" unite="mm" />
-              </div>
+              <p class="mt-1 text-[13px] text-txt">{{ bandePx ? 'Placement manuel' : 'Placement automatique' }}{{ bandePx && !bordABord ? ', longueur libre' : '' }}.</p>
             </div>
           </div>
         </section>
@@ -290,7 +288,17 @@ const b = computed(() => analyse.value?.bande)
         </nav>
 
         <div class="relative h-[62vh] min-h-[420px] bg-paper-2">
-          <template v-if="onglet === 'apercu' && resultat?.stl">
+          <div v-if="onglet === 'placer' && edition" class="h-full overflow-auto p-4">
+            <EditeurBande
+              v-model:bord-a-bord="bordABord"
+              class="mx-auto"
+              :style="{ maxWidth: `calc((62vh - 110px) * ${edition.largeur / edition.hauteur})`, minWidth: '280px' }"
+              :edition="edition"
+              :occupe="enAnalyse"
+              @change="bandePx = $event"
+            />
+          </div>
+          <template v-else-if="onglet === 'apercu' && resultat?.stl">
             <VueAlliance ref="vue3d" :url="resultat.stl" :teinte="metal === 'or' ? 0xe0b765 : 0xdcdcdc" />
             <div class="absolute bottom-4 left-4 flex gap-4 text-[13px]">
               <button class="lien" @click="vue3d?.vue('biais')">Biais</button>
@@ -365,5 +373,6 @@ const b = computed(() => analyse.value?.bande)
         </div>
       </main>
     </div>
+    <EnvoisRecus />
   </div>
 </template>

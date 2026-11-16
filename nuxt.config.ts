@@ -10,6 +10,12 @@ export default defineNuxtConfig({
     // de travail changent entre le poste et Railway.
     python: 'python3',
     dossierTravail: '',
+    // Les bagues envoyées : sur un volume en production (voir moteur.ts).
+    dossierEnvois: '',
+    // Protège la liste des envois dans /atelier. Vide = liste fermée.
+    jetonAtelier: '',
+    // Facultatif : une adresse qui reçoit chaque envoi en JSON (service de leads…).
+    webhookEnvoi: '',
   },
   app: {
     head: {

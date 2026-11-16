@@ -8,6 +8,7 @@ n'est pas inversée quand on la plaque sur la bague avec la même orientation.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 from PIL import Image
@@ -317,8 +318,24 @@ def preparer(chemin_image, p) -> Empreinte:
     theta, coh = champ_orientation(cretes, per)
     largeur_px = p["largeur_utile"] / mm_par_px
     dec_px = p["decalage_bande"] / mm_par_px
-    auto = p.get("angle_bande_deg") is None
-    if auto:
+    manuel = p.get("bande_px")
+    auto = p.get("angle_bande_deg") is None and not manuel
+    if manuel:
+        # Les bouts viennent de l'éditeur, y vers le bas : on repasse en y vers
+        # le haut, le repère de tout le reste du module.
+        ax, ay, bx, by = manuel
+        H = g.shape[0]
+        A = np.array([ax, H - 1 - ay])
+        B = np.array([bx, H - 1 - by])
+        if np.linalg.norm(B - A) < 2:
+            raise ValueError("La bande posée est trop courte.")
+        angle = float(np.arctan2(*(B - A)[::-1]))
+        e, n = _repere(angle)
+        milieu = 0.5 * (A + B)
+        ys, xs = np.nonzero(fg)
+        W = np.stack([xs, ys], 1) @ n
+        dec_px = float(milieu @ n - 0.5 * (W.min() + W.max()))
+    elif auto:
         angle, dec_px = chercher_bande(fg, theta, coh, largeur_px)
     else:
         angle = np.radians(p["angle_bande_deg"])
@@ -328,5 +345,45 @@ def preparer(chemin_image, p) -> Empreinte:
     if retires:
         avert.append(f"{retires} point(s) isolé(s) trop petit(s) pour la fonte retiré(s).")
     emp = Empreinte(g, fg, per, mm_par_px, theta, coh, relief, fg_up, origine, f, bande, avert)
-    borner_bande(emp, p["largeur_utile"])
+    if manuel and not p.get("bord_a_bord", True):
+        # Longueur choisie à la main : on la respecte telle quelle, centrée sur
+        # le milieu des deux bouts. Rogner une crête est alors un choix.
+        bande.centre = milieu
+        bande.longueur_mm = float(np.linalg.norm(B - A) * mm_par_px)
+        bande.l_min_px = -0.5 * np.linalg.norm(B - A)
+        bande.l_max_px = +0.5 * np.linalg.norm(B - A)
+    else:
+        borner_bande(emp, p["largeur_utile"])
     return emp
+
+
+def image_edition(emp: Empreinte, chemin):
+    """L'empreinte traitée, à la résolution de l'image d'origine, crêtes en
+    noir : c'est sur elle qu'on pose la bande dans l'éditeur. Les coordonnées
+    de l'éditeur sont les pixels de cette image, y vers le bas.
+
+    On n'affiche pas la photo envoyée : le navigateur applique l'orientation
+    EXIF d'un JPEG, Pillow non — les deux images ne se superposeraient pas."""
+    H, W = emp.gris.shape
+    pas = emp.facteur
+    petit = emp.relief[::max(1, int(round(pas))), ::max(1, int(round(pas)))]
+    x0, y0 = emp.origine
+    toile = np.zeros((H, W))
+    h = min(petit.shape[0], H - y0)
+    w = min(petit.shape[1], W - x0)
+    toile[y0:y0 + h, x0:x0 + w] = petit[:h, :w]
+    img = (255 * (1 - toile[::-1])).astype(np.uint8)
+    Image.fromarray(img).save(chemin)
+    b = emp.bande
+    demi = 0.5 * b.longueur_mm / emp.mm_par_px
+    A = b.centre - demi * b.e
+    Bp = b.centre + demi * b.e
+    return {
+        "image": Path(chemin).name,
+        "largeur": int(W),
+        "hauteur": int(H),
+        "a": [float(A[0]), float(H - 1 - A[1])],
+        "b": [float(Bp[0]), float(H - 1 - Bp[1])],
+        "largeur_bande_px": float(b.largeur_px),
+        "mm_par_px": float(emp.mm_par_px),
+    }

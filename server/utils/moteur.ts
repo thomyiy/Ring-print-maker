@@ -75,6 +75,33 @@ export async function ecrireParams(dossier: string, params: unknown): Promise<st
   return chemin
 }
 
+/**
+ * Les bagues envoyées à l'atelier. ⚠️ HORS du dossier de travail, que le
+ * ménage vide toutes les six heures : un envoi effacé est une commande perdue.
+ * Sur Railway, `NUXT_DOSSIER_ENVOIS` doit pointer sur un volume monté, sinon
+ * chaque redéploiement les efface.
+ */
+export function racineEnvois(): string {
+  const cfg = useRuntimeConfig()
+  return resolve(cfg.dossierEnvois || join(process.cwd(), '.data', 'envois'))
+}
+
+const REF = /^[0-9]{8}-[0-9]{6}-[a-z0-9-]{1,60}$/
+export function dossierEnvoi(ref: string): string {
+  if (!REF.test(ref)) throw createError({ statusCode: 400, statusMessage: 'Référence invalide' })
+  return join(racineEnvois(), ref)
+}
+
+/** L'atelier seul lit les envois : ils portent des coordonnées de clients. */
+export function exigerAtelier(event: any) {
+  const cfg = useRuntimeConfig()
+  const jeton = String(getHeader(event, 'x-jeton-atelier') ?? getQuery(event).jeton ?? '')
+  if (!cfg.jetonAtelier) {
+    throw createError({ statusCode: 503, statusMessage: 'NUXT_JETON_ATELIER n’est pas défini sur le serveur' })
+  }
+  if (jeton !== cfg.jetonAtelier) throw createError({ statusCode: 401, statusMessage: 'Jeton d’atelier refusé' })
+}
+
 /** Ménage : on garde les dépôts six heures. */
 export async function menage(): Promise<void> {
   const racine = racineTravail()

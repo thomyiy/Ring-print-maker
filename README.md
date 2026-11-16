@@ -10,6 +10,10 @@ perdue.
 - **`/`, la page client** : on ajoute la photo de son empreinte, on choisit le métal (argent 925,
   or jaune, rose ou gris 18 k) et les dimensions (taille de doigt, largeur du fil, relief). La
   bague se recalcule en 3D, avec son poids estimé.
+  Un éditeur montre l'empreinte traitée avec la bande posée dessus : on la glisse, on la
+  tourne, on peut la raccourcir (longueur libre) ou la laisser bord à bord. Le bouton final
+  **envoie** la bague à l'atelier : une fenêtre demande le nom de la pièce et les
+  coordonnées, le serveur recalcule le STL en qualité fabrication et range la fiche.
 - **`/atelier`, l'outil complet** : cadrage de la bande, traitement de l'image, forme du fil,
   maillage de fabrication, rendus de contrôle, masque et bande déroulée, et tous les contrôles.
 
@@ -56,6 +60,12 @@ Railway, nixpacks : Node 22 pour Nuxt, et le venv Python du fournisseur nixpacks
 - `NUXT_PYTHON` : l'interpréteur du moteur (défaut `python3`) ;
 - `NUXT_DOSSIER_TRAVAIL` : où ranger les dépôts et les sorties (défaut : dossier
   temporaire). Les dépôts sont effacés au bout de six heures.
+- `NUXT_DOSSIER_ENVOIS` : où ranger les bagues envoyées par les clients. **À mettre sur un
+  volume Railway**, sinon chaque redéploiement les efface (défaut : `.data/envois`).
+- `NUXT_JETON_ATELIER` : le mot de passe de la liste « Bagues reçues » dans `/atelier`.
+  Sans lui, la liste reste fermée.
+- `NUXT_WEBHOOK_ENVOI` (facultatif) : une adresse qui reçoit chaque envoi en JSON, avec les
+  liens vers les fichiers.
 
 Un calcul à la fois : un maillage de fabrication (1440 × 224 points, 668 000 triangles,
 33 Mo de STL) prend 10 à 15 s et environ 1 Go de mémoire.

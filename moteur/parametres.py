@@ -70,6 +70,16 @@ def normaliser(brut: dict | None) -> dict:
         if lo is not None:
             x = min(max(x, lo), hi)
         p[k] = int(round(x)) if isinstance(d, int) and not isinstance(d, bool) else x
+    # La bande posée à la main dans l'éditeur : ses deux bouts, en pixels de
+    # l'image d'édition (origine en haut à gauche, y vers le bas).
+    bp = brut.get("bande_px")
+    p["bande_px"] = None
+    if isinstance(bp, (list, tuple)) and len(bp) == 4:
+        try:
+            p["bande_px"] = [float(x) for x in bp]
+        except (TypeError, ValueError):
+            pass
+    p["bord_a_bord"] = str(brut.get("bord_a_bord", True)).lower() not in ("false", "0", "non", "off")
     p["sens"] = 1 if p["sens"] >= 0 else -1
     # Le profil doit rester symétrique au demi-tour : nombre de sections pair.
     p["n_sections"] += p["n_sections"] % 2

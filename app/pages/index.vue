@@ -28,6 +28,19 @@ const RELIEFS = [
 const TAILLES = Array.from({ length: 27 }, (_, i) => 44 + i)
 
 const choix = reactive({ metal: 'or-jaune', taille: 54, cote: 1.8, relief: 0.25 })
+
+// Le placement de l'empreinte : null tant que le client laisse faire le
+// placement automatique, sinon les deux bouts posés dans l'éditeur.
+const bandePx = ref<[number, number, number, number] | null>(null)
+const bordABord = ref(true)
+function placer(b: [number, number, number, number] | null) {
+  bandePx.value = b
+  enAttente.value = true
+  calculer()
+}
+const edition = computed(() => resultat.value?.edition
+  ? { ...resultat.value.edition, image: resultat.value.images.edition }
+  : null)
 const metal = computed(() => METAUX.find((m) => m.id === choix.metal)!)
 
 // — L'empreinte ———————————————————————————————————————————————————
@@ -45,6 +58,11 @@ async function deposer(fichier?: File | null, demo = false) {
     const fd = new FormData()
     if (fichier) fd.append('image', fichier)
     depot.value = await $fetch('/api/empreinte' + (demo ? '?demo=1' : ''), { method: 'POST', body: fd })
+    // Une nouvelle empreinte repart du placement automatique : les bouts posés
+    // sur la précédente ne veulent rien dire sur celle-ci.
+    bandePx.value = null
+    bordABord.value = true
+    resultat.value = null
     await calculer()
   } catch (e: any) {
     montrerErreur(e)
@@ -59,6 +77,18 @@ function montrerErreur(e: any) {
     : m || 'Le calcul n’a pas abouti. Réessayez dans un instant.'
 }
 
+/** Ce que le moteur reçoit : la page et l'envoi partagent la même source. */
+function paramsMoteur() {
+  return {
+    taille: choix.taille,
+    diametre_interieur: Math.round((choix.taille / Math.PI) * 10) / 10,
+    cote: choix.cote,
+    hauteur_relief: choix.relief,
+    bande_px: bandePx.value,
+    bord_a_bord: bordABord.value,
+  }
+}
+
 // Le dernier calcul demandé gagne : un réglage changé pendant un calcul en
 // relance un, et la réponse du précédent est ignorée.
 let numero = 0
@@ -66,6 +96,7 @@ async function calculer() {
   if (!depot.value) return
   const n = ++numero
   etat.value = 'calcul'
+  enAttente.value = false
   try {
     const r = await $fetch<any>('/api/calcul', {
       method: 'POST',
@@ -74,10 +105,7 @@ async function calculer() {
         action: 'generer',
         leger: true,
         params: {
-          taille: choix.taille,
-          diametre_interieur: Math.round((choix.taille / Math.PI) * 10) / 10,
-          cote: choix.cote,
-          hauteur_relief: choix.relief,
+          ...paramsMoteur(),
           // Entre l'aperçu et la fabrication : à 720 × 26 les crêtes sortaient
           // en dents de scie à l'écran, et le client jugeait l'empreinte là-dessus.
           n_sections: 1080,
@@ -95,10 +123,37 @@ async function calculer() {
 
 // Le métal ne change que la teinte et le poids : pas de recalcul.
 let minuterie: ReturnType<typeof setTimeout> | undefined
+// ⚠️ L'INDICATEUR S'ALLUME AU CLIC, PAS AU DÉPART DU CALCUL. Entre les deux il
+// y a le délai d'attente, puis 8 à 10 s de calcul, et la bague affichée est
+// encore l'ancienne : Thomas l'a signalé le 16/11/2026 (« ça change la 3D mais
+// il n'y a pas d'indicateur »). Le petit « Mise à jour… » dans un coin ne se
+// voyait pas.
+const enAttente = ref(false)
+const occupe = computed(() => enAttente.value || etat.value === 'calcul' || etat.value === 'envoi')
 watch(() => [choix.taille, choix.cote, choix.relief], () => {
   clearTimeout(minuterie)
+  if (depot.value) enAttente.value = true
   if (depot.value) minuterie = setTimeout(calculer, 400)
 })
+
+// — L'envoi ————————————————————————————————————————————————————
+const fenetreEnvoi = ref<{ ouvrir: () => void } | null>(null)
+const LIB_RELIEF: Record<number, string> = { 0.18: 'délicat', 0.25: 'marqué', 0.3: 'profond' }
+const resume = computed(() =>
+  `Alliance empreinte · ${metal.value.nom} · taille ${choix.taille} · fil ${f(choix.cote, 1)} mm · relief ${LIB_RELIEF[choix.relief] ?? f(choix.relief, 2) + ' mm'}`)
+
+async function envoyer(fo: { nom_piece: string; nom: string; email: string; telephone: string; message: string }) {
+  return await $fetch<{ piece: string; ref: string }>('/api/envoi', {
+    method: 'POST',
+    body: {
+      id: depot.value!.id,
+      piece: { nom: fo.nom_piece },
+      contact: { nom: fo.nom, email: fo.email, telephone: fo.telephone, message: fo.message },
+      choix: { metal: choix.metal, metalNom: metal.value.nom, taille: choix.taille, cote: choix.cote, relief: choix.relief, poids_g: poids(metal.value.densite) },
+      params: paramsMoteur(),
+    },
+  })
+}
 
 const volume = computed(() => resultat.value?.controles?.volume_mm3 as number | undefined)
 const poids = (d: number) => (volume.value ? (volume.value / 1000) * d : null)
@@ -138,13 +193,16 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
           <p v-if="etat === 'envoi' || etat === 'calcul'" class="eyebrow mt-8">Votre bague se dessine…</p>
         </div>
 
-        <p
-          v-if="resultat && etat === 'calcul'"
-          class="absolute left-5 top-5 border border-line bg-paper px-3 py-1 text-[13px] text-txt"
-        >
-          Mise à jour…
-        </p>
-        <p v-if="resultat" class="absolute bottom-5 left-5 text-[13px] text-txt">
+        <!-- Recalcul : la bague affichée est l'ancienne, on le dit franchement. -->
+        <div v-if="resultat && occupe" class="pointer-events-none absolute inset-0 bg-paper-2/60" aria-live="polite">
+          <div class="barre-calcul absolute inset-x-0 top-0 h-[3px] overflow-hidden bg-vert-pale" />
+          <div class="absolute inset-0 flex items-center justify-center">
+            <p class="border border-line bg-paper px-5 py-3 text-[15px] text-ink">
+              Votre bague se met à jour…
+            </p>
+          </div>
+        </div>
+        <p v-if="resultat && !occupe" class="absolute bottom-5 left-5 text-[13px] text-txt">
           Faites tourner la bague du doigt ou de la souris.
         </p>
       </div>
@@ -178,10 +236,30 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
           <p v-if="etat === 'erreur'" class="mt-3 text-[13px] text-framboise">{{ erreur }}</p>
         </section>
 
-        <!-- 2. Le métal -->
-        <section class="border-b border-line px-6 py-7 lg:px-9">
+        <!-- 2. Le placement -->
+        <section v-if="depot" class="border-b border-line px-6 py-7 lg:px-9">
           <div class="flex items-baseline gap-3">
             <span class="valeur text-muted">02</span>
+            <h2 class="text-[20px] font-medium">La partie de l’empreinte</h2>
+          </div>
+          <p class="mt-2 text-[14px] text-txt">
+            Seule une bande de 1,5 mm de large passe sur la bague. Choisissez laquelle.
+          </p>
+          <EditeurBande
+            v-if="edition"
+            v-model:bord-a-bord="bordABord"
+            class="mt-5"
+            :edition="edition"
+            :occupe="occupe"
+            @change="placer"
+          />
+          <p v-else class="mt-4 text-[13px] text-muted">Lecture de l’empreinte…</p>
+        </section>
+
+        <!-- 3. Le métal -->
+        <section class="border-b border-line px-6 py-7 lg:px-9">
+          <div class="flex items-baseline gap-3">
+            <span class="valeur text-muted">03</span>
             <h2 class="text-[20px] font-medium">Le métal</h2>
           </div>
           <div class="mt-5 grid grid-cols-2 gap-px border border-line bg-line">
@@ -201,10 +279,10 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
           </div>
         </section>
 
-        <!-- 3. Les dimensions -->
+        <!-- 4. Les dimensions -->
         <section class="border-b border-line px-6 py-7 lg:px-9">
           <div class="flex items-baseline gap-3">
-            <span class="valeur text-muted">03</span>
+            <span class="valeur text-muted">04</span>
             <h2 class="text-[20px] font-medium">Les dimensions</h2>
           </div>
 
@@ -254,19 +332,37 @@ const largeurMax = computed(() => resultat.value?.controles?.largeur_max as numb
             <div class="flex justify-between"><dt>Fil</dt><dd class="valeur">{{ f(choix.cote, 1) }} mm · jusqu’à {{ f(largeurMax, 1) }} mm dans la torsion</dd></div>
             <div class="flex justify-between"><dt>Poids estimé</dt><dd class="valeur">{{ f(poids(metal.densite), 1) }} g</dd></div>
           </dl>
-          <a
-            v-if="resultat?.stl"
-            :href="resultat.stl"
-            download="alliance-empreinte.stl"
-            class="btn-primary mt-6 w-full"
+          <!-- ⚠️ PAS DE TÉLÉCHARGEMENT ICI : la bague part à l'atelier, qui fabrique.
+               Le fichier ne quitte le serveur que pour l'atelier (/atelier). -->
+          <button
+            type="button" class="btn-primary mt-6 w-full"
+            :disabled="!resultat?.stl || etat === 'calcul'"
+            @click="fenetreEnvoi?.ouvrir()"
           >
-            Télécharger le fichier 3D
-          </a>
-          <button v-else type="button" class="btn-primary mt-6 w-full" disabled>
-            Ajoutez d’abord votre empreinte
+            {{ resultat?.stl ? 'Envoyer ma bague à l’atelier' : 'Ajoutez d’abord votre empreinte' }}
           </button>
+          <FenetreEnvoi ref="fenetreEnvoi" :resume="resume" :envoyer="envoyer" />
         </section>
       </aside>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Barre qui défile : on ne connaît pas la durée, on montre que ça travaille. */
+.barre-calcul::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 35%;
+  background: var(--vert);
+  animation: defile 1.1s ease-in-out infinite;
+}
+@keyframes defile {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(290%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .barre-calcul::after { animation: none; width: 100%; opacity: 0.6; }
+}
+</style>

@@ -42,10 +42,12 @@ def _bande_json(emp: E.Empreinte, p):
 
 def analyser(image, p, sortie: Path):
     emp = E.preparer(image, p)
+    edition = E.image_edition(emp, sortie / "edition.png")
     figures.figure_masque(emp, sortie / "masque.png")
     figures.figure_bande(emp, p, sortie / "bande.png")
     return emp, {"bande": _bande_json(emp, p), "avertissements": emp.avertissements,
-                 "images": {"masque": "masque.png", "bande": "bande.png"}}
+                 "edition": edition,
+                 "images": {"masque": "masque.png", "bande": "bande.png", "edition": "edition.png"}}
 
 
 def generer(image, p, sortie: Path, leger=False):
@@ -54,7 +56,9 @@ def generer(image, p, sortie: Path, leger=False):
     t0 = time.time()
     if leger and image:
         emp = E.preparer(image, p)
-        res = {"bande": _bande_json(emp, p), "avertissements": emp.avertissements, "images": {}}
+        edition = E.image_edition(emp, sortie / "edition.png")
+        res = {"bande": _bande_json(emp, p), "avertissements": emp.avertissements,
+               "edition": edition, "images": {"edition": "edition.png"}}
     else:
         emp, res = analyser(image, p, sortie) if image else (None, {"avertissements": [], "images": {}})
     m = A.construire(p, emp)
