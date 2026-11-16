@@ -16,6 +16,10 @@ export default defineNuxtConfig({
     jetonAtelier: '',
     // Facultatif : une adresse qui reçoit chaque envoi en JSON (service de leads…).
     webhookEnvoi: '',
+    // La bibliothèque des chevalières (rainbowantworkshop.fr) et son cache local,
+    // partagé avec le moteur Python (NUXT_DOSSIER_BIBLIO des deux côtés).
+    biblioUrl: 'https://rainbowantworkshop.fr/biblio/assets',
+    dossierBiblio: '',
   },
   app: {
     head: {

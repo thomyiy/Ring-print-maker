@@ -17,6 +17,28 @@ perdue.
 - **`/atelier`, l'outil complet** : cadrage de la bande, traitement de l'image, forme du fil,
   maillage de fabrication, rendus de contrôle, masque et bande déroulée, et tous les contrôles.
 
+## La chevalière (`/chevaliere`)
+
+Les chevalières de rainbowantworkshop.fr (10 formes, plateaux de 10, 14 et 20 mm, creuse ou
+pleine, 17 tailles de doigt), avec l'empreinte en relief sur le plateau :
+
+- **dans le godet** (plateau creusé) : les crêtes montent du fond et affleurent au bord ;
+- **sur le plateau plein** : les crêtes sont en saillie (0,20 à 0,40 mm), une marge de 0,4 mm
+  reste lisse au bord.
+
+Le client choisit la zone de l'empreinte en glissant et tournant le contour du plateau, posé à
+l'échelle réelle sur l'empreinte.
+
+- La bibliothèque (`catalog-chevaliere.json` et les maillages `rings/…/lisse|creux.jrm`) est
+  relayée par `/api/biblio/…` : elle n'envoie pas d'en-tête CORS. Les fichiers sont gardés sur
+  disque (`NUXT_DOSSIER_BIBLIO`, par défaut `.data/biblio`), partagés avec le moteur Python.
+- Le navigateur affiche la chevalière et construit le relief (`shared/chevaliere.ts`).
+- À l'envoi, `python -m moteur chevaliere` refait le relief à 0,03 mm et l'unit au maillage
+  (manifold3d) : un seul solide fermé, contrôlé.
+
+⚠️ `shared/chevaliere.ts` est la traduction de `moteur/chevaliere.py` : `npm test` compare
+les deux reliefs sommet par sommet, triangle par triangle.
+
 ## Qui calcule quoi
 
 - **Le navigateur construit la bague** (`shared/alliance.ts`, affichée avec three.js) : taille,

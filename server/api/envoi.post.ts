@@ -2,10 +2,11 @@ import { cp, mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
 interface Corps {
+  type?: 'alliance' | 'chevaliere'
   id: string
   piece?: { nom?: string }
   contact?: { nom?: string; email?: string; telephone?: string; message?: string }
-  choix?: { metal?: string; metalNom?: string; taille?: number; cote?: number; relief?: number }
+  choix?: Record<string, unknown>
   params: Record<string, unknown>
 }
 
@@ -24,7 +25,8 @@ function slug(s: string) {
 export default defineEventHandler(async (event) => {
   const c = await readBody<Corps>(event)
   const dossierSource = dossierSession(c.id)
-  const nomPiece = nettoyer(c.piece?.nom, 80) || 'Alliance empreinte'
+  const chevaliere = c.type === 'chevaliere'
+  const nomPiece = nettoyer(c.piece?.nom, 80) || (chevaliere ? 'Chevalière empreinte' : 'Alliance empreinte')
   const contact = {
     nom: nettoyer(c.contact?.nom, 120),
     email: nettoyer(c.contact?.email, 200),
@@ -44,10 +46,11 @@ export default defineEventHandler(async (event) => {
   await mkdir(dossier, { recursive: true })
   await cp(join(dossierSource, 'source.png'), join(dossier, 'empreinte_source.png'))
 
-  const params = { ...c.params, n_sections: 1440, n_face: 50 }
+  const params = chevaliere ? { ...c.params } : { ...c.params, n_sections: 1440, n_face: 50 }
   const fichierParams = await ecrireParams(dossier, params)
   const r = await lancerMoteur([
-    'generer', '--image', join(dossier, 'empreinte_source.png'), '--params', fichierParams, '--sortie', dossier,
+    chevaliere ? 'chevaliere' : 'generer',
+    '--image', join(dossier, 'empreinte_source.png'), '--params', fichierParams, '--sortie', dossier,
   ])
 
   const fiche = {
@@ -55,11 +58,12 @@ export default defineEventHandler(async (event) => {
     recu_le: d.toISOString(),
     piece: nomPiece,
     contact,
+    type: chevaliere ? 'chevaliere' : 'alliance',
     choix: c.choix ?? {},
     bande: r.bande,
     controles: r.controles,
     avertissements: r.avertissements,
-    fichiers: ['alliance.stl', ...Object.values(r.images ?? {}), 'empreinte_source.png'],
+    fichiers: [r.stl, ...Object.values(r.images ?? {}), 'empreinte_source.png'],
   }
   await writeFile(join(dossier, 'fiche.json'), JSON.stringify(fiche, null, 2))
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  ACESFilmicToneMapping, Box3, BufferAttribute, BufferGeometry, Color, Mesh, MeshPhysicalMaterial, PerspectiveCamera,
+  ACESFilmicToneMapping, Box3, BufferAttribute, BufferGeometry, Color, Group, Mesh, type Object3D, MeshPhysicalMaterial, PerspectiveCamera,
   PMREMGenerator, Scene, SRGBColorSpace, Vector3, WebGLRenderer,
 } from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
@@ -9,8 +9,15 @@ import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
 import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
 import { trianguler, type Alliance } from '~~/shared/alliance'
+import type { Piece } from '~~/shared/piece'
 
-const props = defineProps<{ url?: string | null; maillage?: Alliance | null; teinte: number; fond?: number }>()
+const props = defineProps<{
+  url?: string | null
+  maillage?: Alliance | null
+  pieces?: Piece[] | null
+  teinte: number
+  fond?: number
+}>()
 const hote = ref<HTMLDivElement>()
 const chargement = ref(false)
 
@@ -65,6 +72,7 @@ onMounted(() => {
   redessiner()
   if (props.url) charger(props.url)
   if (props.maillage) poser(props.maillage)
+  if (props.pieces) poserPieces(props.pieces)
 })
 
 onBeforeUnmount(() => { cancelAnimationFrame(anim); renderer?.dispose() })
@@ -101,13 +109,49 @@ function installer(geo: BufferGeometry) {
   if (maillage) { scene.remove(maillage); maillage.geometry.dispose() }
   maillage = new Mesh(geo, matiere)
   scene.add(maillage)
+  cadrer(maillage)
+}
+
+// — Plusieurs pièces ————————————————————————————————————————————————
+// Seule la pièce dont la clé a changé est reconstruite : déplacer l'empreinte
+// refait le relief, pas la chevalière.
+const groupe = new Group()
+const parCle = new Map<string, Mesh>()
+function poserPieces(liste: Piece[]) {
+  if (!renderer) return
+  if (!groupe.parent) scene.add(groupe)
+  const vues = new Set<string>()
+  for (const p of liste) {
+    vues.add(p.cle)
+    if (parCle.has(p.cle)) continue
+    const geo = new BufferGeometry()
+    geo.setAttribute('position', new BufferAttribute(p.positions, 3))
+    geo.setIndex(new BufferAttribute(p.indices, 1))
+    if (p.normales) geo.setAttribute('normal', new BufferAttribute(p.normales, 3))
+    else geo.computeVertexNormals()
+    const m = new Mesh(geo, matiere)
+    groupe.add(m)
+    parCle.set(p.cle, m)
+  }
+  for (const [cle, m] of parCle) {
+    if (vues.has(cle)) continue
+    groupe.remove(m)
+    m.geometry.dispose()
+    parCle.delete(cle)
+  }
+  if (groupe.children.length) cadrer(groupe)
+  redessiner()
+}
+watch(() => props.pieces, (l) => l && poserPieces(l))
+
+function cadrer(objet: Object3D) {
   redessiner()
   // ⚠️ ON NE RECADRE QU'UNE FOIS. Recadrer à chaque recalcul ramenait la
   // caméra au point de départ après chaque clic sur une taille : on perdait
   // l'angle qu'on venait de choisir pour regarder l'empreinte.
   if (cadre) return
   cadre = true
-  const b = new Box3().setFromObject(maillage)
+  const b = new Box3().setFromObject(objet)
   const c = b.getCenter(new Vector3())
   controls.target.copy(c)
   const r = b.getSize(new Vector3()).length()

@@ -201,15 +201,7 @@ const largeurMax = computed(() => alliance.value?.largeurMax)
 
 <template>
   <div class="flex min-h-screen flex-col">
-    <header class="border-b border-line">
-      <div class="flex items-center justify-between px-5 py-4 lg:px-10">
-        <div class="flex items-center gap-3">
-          <img src="/logo-mark.png" alt="" class="h-8 w-auto">
-          <span class="text-[17px] font-medium tracking-tight">Rainbow Ant Workshop</span>
-        </div>
-        <NuxtLink to="/atelier" class="text-[13px] text-muted hover:text-ink">Atelier</NuxtLink>
-      </div>
-    </header>
+    <EnTete />
 
     <div class="grid flex-1 items-start lg:grid-cols-[1fr_440px]">
       <!-- ─── La bague ─── -->

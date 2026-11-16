@@ -68,8 +68,60 @@ def preparer(image, p, sortie: Path):
         "texture": texture,
         "periode_px": emp.periode_px,
         "hauteur_image": int(emp.gris.shape[0]),
+        # Le milieu de l'empreinte, en pixels d'édition (y vers le bas) : là
+        # où la chevalière pose son plateau au départ.
+        "centre_empreinte": [float(np.nonzero(emp.support)[1].mean()),
+                             float(emp.gris.shape[0] - 1 - np.nonzero(emp.support)[0].mean())],
         "images": {"edition": "edition.png", "relief": "relief.png"},
     }
+
+
+def chevaliere(image, p, brut, sortie: Path):
+    """La chevalière de l'atelier : maillage de la bibliothèque + relief de
+    l'empreinte, unis en un seul solide fermé."""
+    from . import chevaliere as C
+    import trimesh
+    emp = E.preparer(image, p)
+    q = {
+        "forme": str(brut.get("forme", "RON")),
+        "plateau": int(brut.get("plateau", 14)),
+        "remplissage": "pleine" if brut.get("remplissage") == "pleine" else "creuse",
+        "doigt": int(brut.get("doigt", 54)),
+        "surface": "plein" if brut.get("surface") == "plein" else "godet",
+        "hauteur_relief": float(p["hauteur_relief"]),
+        "periode_mm": float(brut.get("periode_mm", 0.45)),
+        "placement_px": [float(x) for x in brut.get("placement_px") or [0, 0, 0]],
+    }
+    if not brut.get("placement_px"):
+        H, W = emp.gris.shape
+        ys, xs = np.nonzero(emp.support)
+        q["placement_px"] = [float(xs.mean()), float(H - 1 - ys.mean()), 0.0]
+    r = C.construire(q, emp)
+    A.ecrire_stl(sortie / "chevaliere.stl", r["V"], r["F"])
+    m = trimesh.Trimesh(r["V"], r["F"], process=False)
+    ctrl = {
+        "etanche": bool(m.is_watertight),
+        "orientation_coherente": bool(m.is_winding_consistent),
+        "statut_union": r["statut"],
+        "volume_mm3": r["volume_mm3"],
+        "volume_base_mm3": r["volume_base_mm3"],
+        "volume_relief_mm3": r["volume_relief_mm3"],
+        "poids_or_750_g": r["volume_mm3"] / 1000 * p["densite_or"],
+        "poids_argent_925_g": r["volume_mm3"] / 1000 * p["densite_argent"],
+        "triangles": int(len(r["F"])),
+    }
+    out = {"stl": "chevaliere.stl", "controles": ctrl, "choix": q, "forme": r["forme"],
+           "avertissements": emp.avertissements, "images": {}}
+    if not brut.get("sans_rendu"):
+        from . import rendu
+        Vc = r["V"]
+        rendu.rendre(Vc, r["F"], direction=(0.55, 0.8, 0.9), haut=(0, 1, 0), largeur_px=1200).save(sortie / "rendu_general.png")
+        rendu.rendre(Vc, r["F"], direction=(0, 1, 0), haut=(0, 0, 1), largeur_px=1200,
+                     centre=(0, 0, 0), champ=q["plateau"] * 1.6).save(sortie / "rendu_dessus.png")
+        out["images"] = {"general": "rendu_general.png", "dessus": "rendu_dessus.png"}
+    if not ctrl["etanche"]:
+        out["avertissements"].append("Maillage non étanche.")
+    return out
 
 
 def generer(image, p, sortie: Path, leger=False):
@@ -113,7 +165,7 @@ def generer(image, p, sortie: Path, leger=False):
 
 def _arguments():
     ap = argparse.ArgumentParser(prog="moteur")
-    ap.add_argument("action", choices=["schema", "analyser", "preparer", "generer", "demo", "synthetique", "serveur"])
+    ap.add_argument("action", choices=["schema", "analyser", "preparer", "generer", "chevaliere", "demo", "synthetique", "serveur"])
     ap.add_argument("--image")
     ap.add_argument("--params")
     ap.add_argument("--sortie", default="sortie")
@@ -141,6 +193,8 @@ def executer(argv) -> dict:
         out = analyser(image, p, sortie)[1]
     elif a.action == "preparer":
         out = preparer(image, p, sortie)
+    elif a.action == "chevaliere":
+        out = chevaliere(image, p, brut, sortie)
     else:
         out = generer(image, p, sortie, a.leger)
     (sortie / "resultat.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))

@@ -56,16 +56,18 @@ const f = (x: number, d = 1) => (x ?? 0).toLocaleString('fr-FR', { minimumFracti
             <template v-if="e.contact.telephone"> · {{ e.contact.telephone }}</template>
           </p>
           <p class="valeur mt-1 text-[12px] text-txt">
-            {{ e.choix.metalNom }} · taille {{ e.choix.taille }} · fil {{ f(e.choix.cote) }} mm · relief {{ f(e.choix.relief, 2) }} mm
+            <template v-if="e.choix.resume">{{ e.choix.resume }}</template>
+            <template v-else>{{ e.choix.metalNom }} · taille {{ e.choix.taille }} · fil {{ f(e.choix.cote) }} mm · relief {{ f(e.choix.relief, 2) }} mm</template>
             · {{ f(e.controles.poids_or_750_g, 2) }} g or / {{ f(e.controles.poids_argent_925_g, 2) }} g argent
           </p>
           <p v-if="e.contact.message" class="mt-2 text-txt">« {{ e.contact.message }} »</p>
           <p class="valeur mt-1 text-[12px] text-muted">{{ date(e.recu_le) }} · {{ e.ref }}</p>
         </div>
         <div class="flex flex-col gap-2 text-[14px] md:items-end">
-          <a :href="lien(e.ref, 'alliance.stl')" class="lien">STL de fabrication</a>
-          <a :href="lien(e.ref, 'masque.png')" target="_blank" class="lien">Empreinte et cadre</a>
-          <a :href="lien(e.ref, 'bande.png')" target="_blank" class="lien">Bande déroulée</a>
+          <a :href="lien(e.ref, e.fichiers.find((x: string) => x.endsWith('.stl')))" class="lien">STL de fabrication</a>
+          <a v-if="e.fichiers.includes('masque.png')" :href="lien(e.ref, 'masque.png')" target="_blank" class="lien">Empreinte et cadre</a>
+          <a v-if="e.fichiers.includes('bande.png')" :href="lien(e.ref, 'bande.png')" target="_blank" class="lien">Bande déroulée</a>
+          <a v-if="e.fichiers.includes('rendu_dessus.png')" :href="lien(e.ref, 'rendu_dessus.png')" target="_blank" class="lien">Vue de dessus</a>
           <a :href="lien(e.ref, 'empreinte_source.png')" target="_blank" class="lien">Image envoyée</a>
         </div>
       </article>

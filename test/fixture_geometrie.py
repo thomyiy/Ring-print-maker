@@ -58,3 +58,26 @@ out["avec_relief"] = {
     "positions": m.V.ravel().tolist(),
 }
 (sortie / "geometrie.json").write_text(json.dumps(out))
+
+# — Chevalière : le relief en solide et le décodage des maillages ——————————
+from moteur import chevaliere as C  # noqa: E402
+
+cat = C.catalogue()
+forme, taille = C.variante(cat, "ECU", 14)
+plateau = C.contour_centre(taille, "plateau")
+cup = C.contour_centre(taille, "cup")
+hauteur = lambda u, v: 0.3 * (1 + np.sin(3 * u) * np.cos(2 * v)) / 2  # noqa: E731
+chev = {"taille": taille}
+for nom, (zone, emprise, base) in {
+    "godet": (cup, C.retrecir(plateau, 0.3), -taille["cupDepth"]),
+    "plein": (C.retrecir(plateau, C.MARGE_PLEIN), C.retrecir(plateau, C.MARGE_PLEIN), 0.0),
+}.items():
+    V, F, vol = C.relief_solide(zone, emprise, hauteur, base, 0.1)
+    chev[nom] = {"base": base, "positions": V.ravel().tolist(), "indices": F.ravel().tolist(), "volume": vol}
+data = C._telecharger("rings/ECU/14/creuse/190/creux.jrm")
+(sortie / "ecu.jrm").write_bytes(data)
+Vw, Fw = C.lire_jrm(data)
+a, b, c = Vw[Fw[:, 0]], Vw[Fw[:, 1]], Vw[Fw[:, 2]]
+chev["jrm_volume"] = float(np.einsum("ij,ij->i", a, np.cross(b, c)).sum() / 6)
+out["chevaliere"] = chev
+(sortie / "geometrie.json").write_text(json.dumps(out))
