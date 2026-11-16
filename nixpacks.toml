@@ -1,16 +1,18 @@
 # Node pour Nuxt, Python pour le moteur de géométrie (numpy, scipy).
+#
+# ⚠️ PAS DE `python312` DANS `nixPkgs`, ET PAS DE VENV À NOUS. Le fournisseur
+# `python` apporte déjà son interpréteur et monte `/opt/venv` depuis
+# requirements.txt (phase `python:install`). En ajouter un second a cassé le
+# premier déploiement, le 16/11/2026 : deux Python dans le même profil Nix se
+# disputent `bin/pydoc` et `nix-env` refuse de construire l'environnement.
 providers = ["node", "python"]
 
 [phases.setup]
-nixPkgs = ["...", "python312"]
 # Les roues numpy et scipy chargent libstdc++ et zlib, absents du profil Nix minimal.
 nixLibs = ["...", "stdenv.cc.cc.lib", "zlib"]
 
 [phases.install]
-cmds = [
-  "npm install --no-audit --no-fund",
-  "python3 -m venv /opt/moteur && /opt/moteur/bin/pip install --no-cache-dir -r requirements.txt",
-]
+cmds = ["npm install --no-audit --no-fund"]
 
 [variables]
-NUXT_PYTHON = "/opt/moteur/bin/python"
+NUXT_PYTHON = "/opt/venv/bin/python"

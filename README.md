@@ -50,7 +50,7 @@ orientation cohérente), normales sortantes, diamètre intérieur minimal égal 
 
 ## Déploiement
 
-Railway, nixpacks : Node 22 pour Nuxt, et un venv Python dans `/opt/moteur`
+Railway, nixpacks : Node 22 pour Nuxt, et le venv Python du fournisseur nixpacks dans `/opt/venv`
 (`NUXT_PYTHON`). Variables relues au démarrage :
 
 - `NUXT_PYTHON` : l'interpréteur du moteur (défaut `python3`) ;
