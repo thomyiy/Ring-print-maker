@@ -19,9 +19,14 @@ useHead({ title: `Chevalière empreinte — ${marque.nom}` })
 // — La bibliothèque ——————————————————————————————————————————————————
 const { data: catalogue } = await useFetch<any>('/api/biblio/catalog-chevaliere.json', { key: 'cat-chev' })
 const produit = computed(() => catalogue.value?.products?.[0])
+const EXCLUS = ['vermeil']
 const metaux = computed(() => {
   const tous = catalogue.value?.metals ?? []
-  return (produit.value?.metals ?? []).map((m: any) => tous.find((t: any) => t.id === m.id)).filter(Boolean)
+  return (produit.value?.metals ?? [])
+    // Pas de vermeil ici, même si le catalogue du configurateur le propose
+    // (Thomas, 16/11/2026).
+    .filter((m: any) => !EXCLUS.includes(m.id))
+    .map((m: any) => tous.find((t: any) => t.id === m.id)).filter(Boolean)
 })
 
 const RELIEFS_PLEIN = [
