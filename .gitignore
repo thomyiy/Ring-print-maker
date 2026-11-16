@@ -1,0 +1,14 @@
+node_modules
+.nuxt
+.output
+.data
+.nitro
+.cache
+dist
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.log
+exemples/**/*.stl

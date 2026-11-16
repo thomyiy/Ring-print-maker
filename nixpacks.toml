@@ -1,0 +1,16 @@
+# Node pour Nuxt, Python pour le moteur de géométrie (numpy, scipy).
+providers = ["node", "python"]
+
+[phases.setup]
+nixPkgs = ["...", "python312"]
+# Les roues numpy et scipy chargent libstdc++ et zlib, absents du profil Nix minimal.
+nixLibs = ["...", "stdenv.cc.cc.lib", "zlib"]
+
+[phases.install]
+cmds = [
+  "npm install --no-audit --no-fund",
+  "python3 -m venv /opt/moteur && /opt/moteur/bin/pip install --no-cache-dir -r requirements.txt",
+]
+
+[variables]
+NUXT_PYTHON = "/opt/moteur/bin/python"

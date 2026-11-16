@@ -1,0 +1,70 @@
+@import './tokens.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Repris de rainbowantworkshop.fr : Jost seule, angles vifs, aucune ombre,
+   un seul bouton plein par écran, la couleur signale. */
+@layer base {
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    @apply bg-paper text-ink font-sans;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+  h1, h2, h3 {
+    @apply text-ink font-sans;
+    font-weight: 400;
+    letter-spacing: -0.022em;
+    line-height: 1.05;
+  }
+  p { @apply text-txt; }
+  ::selection { background: var(--vert); color: var(--ink); }
+  :focus-visible { outline: 2px solid var(--vert); outline-offset: 3px; }
+}
+
+@layer components {
+  .eyebrow {
+    @apply font-sans uppercase;
+    color: var(--vert-texte);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.18em;
+  }
+  .filet-teinte { width: 52px; height: 2px; background: var(--vert); }
+  .btn {
+    @apply inline-flex items-center justify-center font-sans;
+    height: 46px;
+    padding-inline: 26px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 0;
+    transition: background-color .18s ease-out, color .18s ease-out, border-color .18s ease-out;
+  }
+  .btn-primary { @apply btn bg-ink text-paper border border-ink; }
+  .btn-primary:hover:not(:disabled) { @apply bg-vert text-ink border-vert; }
+  .btn:disabled { @apply opacity-40; cursor: default; }
+  .lien {
+    @apply text-ink font-medium underline;
+    text-underline-offset: 4px;
+    text-decoration-thickness: 1px;
+    text-decoration-color: var(--line);
+    transition: text-decoration-color .18s ease-out;
+  }
+  .lien:hover { text-decoration-color: var(--vert); }
+  .champ-intitule {
+    @apply block uppercase text-txt;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+  }
+  .champ {
+    @apply w-full border border-line bg-paper px-3 text-ink;
+    height: 40px;
+    border-radius: 0;
+  }
+  .champ:focus { @apply border-ink outline-none; }
+  .valeur { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  input[type='range'] { accent-color: var(--ink); }
+}

@@ -1,0 +1,77 @@
+/* Rainbow Ant Workshop — jetons de design.
+   Source unique : CHARTE-GRAPHIQUE.md, à la racine du dépôt. Ne rien ajouter ici
+   sans l'y écrire d'abord.
+
+   Cinq des sept couleurs sont relevées au pixel sur les deux références de la
+   marque — midi-dix.com et kahlo.qodeinteractive.com. Deux seulement sont
+   calculées : le rose et le bleu soutenus, à l'étalon du vert de Kahlo, soit
+   hsl(H, 41 %, 61 %). C'est ce réglage commun qui les fait tenir ensemble et
+   qui permet de les permuter d'une page à l'autre sans rien redessiner.
+
+   Règles non négociables (§ 6 de la charte) :
+   - une seule teinte par écran ;
+   - la couleur signale, elle ne décore pas ;
+   - aucun arrondi, aucune ombre : le filet de 1 px et le blanc font la structure. */
+:root {
+  /* — Neutres ————————————————————————————————— */
+  --paper: #ffffff;        /* le fond, partout */
+  --paper-2: #fbf9f9;      /* blanc cassé (Kahlo) : sections alternées */
+  --shell: #ffffff;        /* plus de fond gris : le blanc va jusqu'au bord */
+
+  --ink: #000000;          /* titres, texte fort, boutons pleins */
+  --ink-2: #1a1a1a;        /* survol d'un aplat noir */
+  --txt: #33373d;          /* paragraphes, intitulés (midi-dix) */
+  --muted: #a6a6a6;        /* légendes, valeurs, états inactifs (Kahlo) */
+
+  /* — Teintes soutenues, toutes en hsl(H, 41 %, 61 %) ——————— */
+  --vert: #a3c471;         /* teinte principale (Kahlo) */
+  --rose: #c47396;         /* calculé sur la teinte Kahlo, 334° */
+  --bleu: #739dc4;         /* calculé, 209° */
+
+  /* — Teintes pâles : fonds de blocs pédagogiques ——————————— */
+  --vert-pale: #e1e9d3;    /* midi-dix */
+  --rose-pale: #eec5d7;    /* Kahlo */
+  --bleu-pale: #cadff3;    /* midi-dix */
+
+  /* — Teintes de TEXTE ————————————————————————
+     Même teinte et même saturation que les soutenues, clarté 26 %.
+
+     Les soutenues ont été calculées pour être des FONDS. S'en servir comme
+     couleur de texte était une erreur : #a3c471 sur blanc ne fait que 1,96:1,
+     très en dessous du seuil AA de 4,5 — et 1,27:1 sur le rose pâle. Ces trois
+     déclinaisons passent partout : 7,3 / 5,9 / 4,7 / 5,4 pour le vert sur
+     blanc, vert pâle, rose pâle et bleu pâle. */
+  --vert-texte: #485d27;
+  --rose-texte: #5d273f;
+  --bleu-texte: #27435d;
+
+  /* Le noir passe sur les trois pâles : 16,8 / 13,6 / 15,4 pour un seuil AA à
+     4,5. En revanche, jamais de --muted sur un fond coloré : ce couple ne
+     passe pas. */
+
+  /* — Fonctionnel ————————————————————————————— */
+  --framboise: #ee2852;    /* erreurs de formulaire UNIQUEMENT (Kahlo) */
+
+  /* La couleur d'interaction est le vert : au survol, elle signale ce qui
+     répond, elle ne décore pas. */
+  --accent: var(--vert);
+
+  /* — Filets ————————————————————————————————— */
+  --line: #e6e6e6;
+  --line-2: #f0f0f0;
+  --hairline: rgba(51, 55, 61, 0.16);
+
+  /* — Rythme —————————————————————————————————
+     Aéré pour les images, resserré pour le texte (charte § 10) : le registre
+     galerie a besoin de blanc, une page pédagogique a besoin qu'on avance. */
+  --section-pad: clamp(52px, 6.5vw, 96px);
+  --section-pad-large: clamp(64px, 9vw, 130px);
+  --gutter: clamp(20px, 4vw, 54px);
+  --header-h: 74px;
+}
+
+@media (max-width: 720px) {
+  :root {
+    --header-h: 64px;
+  }
+}

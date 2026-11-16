@@ -1,0 +1,72 @@
+{
+  "bande": {
+    "angle_deg": 80.0,
+    "decalage_mm": -2.709504826761748,
+    "auto": true,
+    "longueur_mm": 12.689959180976578,
+    "largeur_mm": 1.5,
+    "alignement": 0.7079930859792606,
+    "periode_px": 7.786582215558535,
+    "periode_mm": 0.21428571428571427,
+    "mm_par_px": 0.027519867941231707,
+    "agrandissement": 6.0,
+    "cretes_largeur": 7.0
+  },
+  "avertissements": [
+    "2 point(s) isolé(s) trop petit(s) pour la fonte retiré(s)."
+  ],
+  "images": {
+    "masque": "masque.png",
+    "bande": "bande.png",
+    "general": "rendu_general.png",
+    "dessus": "rendu_dessus.png",
+    "relief": "rendu_relief.png"
+  },
+  "controles": {
+    "etanche": true,
+    "aretes_non_partagees_par_2": 0,
+    "normales_sortantes": 1.0,
+    "triangles_degeneres": 0,
+    "diametre_interieur_min": 17.199999999999996,
+    "diametre_interieur_cote": 17.2,
+    "diametre_exterieur_max": 22.225530425420807,
+    "largeur_max": 2.421316063967681,
+    "ecart_raccord": 3.1115953025544333e-15,
+    "volume_mm3": 195.6498927779685,
+    "poids_or_750_g": 3.0325733380585116,
+    "poids_argent_925_g": 2.0269328891797533,
+    "longueur_arc_relief_mm": 12.457305254895665,
+    "pas_tour_mm": 0.04537856055185257,
+    "pas_face_mm": 0.030612244897959183,
+    "sommets": 334080,
+    "triangles": 668160
+  },
+  "stl": "alliance.stl",
+  "parametres": {
+    "taille": 54.0,
+    "diametre_interieur": 17.2,
+    "cote": 1.8,
+    "rayon_arete": 0.15,
+    "torsion_deg": 180.0,
+    "arc_torsion_deg": 170.0,
+    "adouci": 0.08,
+    "sens": 1,
+    "hauteur_relief": 0.18,
+    "cretes_largeur": 7.0,
+    "angle_bande_deg": null,
+    "decalage_bande": 0.0,
+    "cretes_noires": true,
+    "miroir": false,
+    "agrandissement": 6.0,
+    "flou": 0.12,
+    "douceur": 0.08,
+    "aire_min_mm2": 0.01,
+    "n_sections": 1440,
+    "n_face": 50,
+    "n_coin": 8,
+    "densite_or": 15.5,
+    "densite_argent": 10.36,
+    "largeur_utile": 1.5
+  },
+  "duree_s": 13.038822174072266
+}
