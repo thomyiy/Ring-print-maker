@@ -19,6 +19,7 @@ cas = {
     "standard": {"n_sections": 360, "n_face": 20},
     "large_profond": {"n_sections": 360, "n_face": 20, "cote": 2.2, "hauteur_relief": 0.3, "taille": 62},
     "sens_inverse": {"n_sections": 240, "n_face": 12, "sens": -1, "arc_torsion_deg": 140, "adouci": 0.15},
+    "sans_lissage": {"n_sections": 240, "n_face": 12, "lissage_sommet": 0},
 }
 out = {"sans_relief": {}, "avec_relief": {}}
 for nom, brut in cas.items():
@@ -26,7 +27,7 @@ for nom, brut in cas.items():
     m = A.construire(p, None)
     out["sans_relief"][nom] = {
         "params": {k: p[k] for k in ("diametre_interieur", "cote", "rayon_arete", "torsion_deg",
-                                     "arc_torsion_deg", "adouci", "sens", "hauteur_relief",
+                                     "arc_torsion_deg", "adouci", "sens", "lissage_sommet", "hauteur_relief",
                                      "n_sections", "n_face", "n_coin")},
         "positions": m.V.ravel().tolist(),
         "volume": A.volume_signe(m.V, m.F),
@@ -43,7 +44,7 @@ m = A.construire(p, emp)
 ctrl = A.controler(p, m, complet=False)
 out["avec_relief"] = {
     "params": {k: p[k] for k in ("diametre_interieur", "cote", "rayon_arete", "torsion_deg",
-                                 "arc_torsion_deg", "adouci", "sens", "hauteur_relief",
+                                 "arc_torsion_deg", "adouci", "sens", "lissage_sommet", "hauteur_relief",
                                  "n_sections", "n_face", "n_coin")},
     "texture": tex,
     "hauteur_image": int(emp.gris.shape[0]),

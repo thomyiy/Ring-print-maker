@@ -13,6 +13,7 @@ const r = reactive({
   arc_torsion_deg: 170,
   adouci: 0.08,
   sens: 1,
+  lissage_sommet: 0.08,
   cretes_largeur: 7,
   flou: 0.12,
   douceur: 0.08,
@@ -230,6 +231,7 @@ const b = computed(() => analyse.value?.bande)
             <Reglage v-model="r.rayon_arete" libelle="Rayon des arêtes" :min="0.05" :max="0.4" :pas="0.01" unite="mm" />
             <Reglage v-model="r.torsion_deg" libelle="Torsion" :min="180" :max="360" :pas="180" unite="°" aide="Un nombre impair de demi-tours ferme l’anneau sur la face opposée." />
             <Reglage v-model="r.arc_torsion_deg" libelle="Arc de la torsion" :min="60" :max="300" :pas="1" unite="°" />
+            <Reglage v-model="r.lissage_sommet" libelle="Lissage du pli au sommet" :min="0" :max="0.3" :pas="0.01" aide="Sans lui, la section prend un pli au sommet. 0,08 décolle l’intérieur du doigt de 0,03 mm au sommet seulement." />
             <Reglage v-model="r.adouci" libelle="Adouci aux raccords" :min="0" :max="0.3" :pas="0.01" aide="Part de l’arc où la vitesse de rotation monte et descend." />
             <div>
               <span class="champ-intitule">Sens de la torsion</span>

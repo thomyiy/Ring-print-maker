@@ -18,6 +18,7 @@ TABLE = {
     "arc_torsion_deg": (170.0, 60.0, 300.0, 1.0, "°", "Arc de la torsion", "forme"),
     "adouci": (0.08, 0.0, 0.3, 0.01, "", "Adouci aux raccords (part de l'arc)", "forme"),
     "sens": (1, -1, 1, 2, "", "Sens de la torsion", "forme"),
+    "lissage_sommet": (0.08, 0.0, 0.3, 0.01, "", "Lissage du pli au sommet", "forme"),
     # — Empreinte ———————————————————————————————————————
     "hauteur_relief": (0.18, 0.08, 0.4, 0.01, "mm", "Hauteur des crêtes", "empreinte"),
     "cretes_largeur": (7.0, 2.5, 10.0, 0.5, "", "Crêtes dans la largeur", "empreinte"),

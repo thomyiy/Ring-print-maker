@@ -63,6 +63,31 @@ def loi_torsion(phi, p):
     return T * r / (1 - e)
 
 
+def _abs_lisse(x, d):
+    """|x|, arrondi en parabole sous d : jamais en dessous de |x|, raccord C1."""
+    ax = np.abs(x)
+    if d <= 0:
+        return ax
+    return np.where(ax >= d, ax, 0.5 * (x * x / d + d))
+
+
+def rayon_centre(alpha, a, r, lissage):
+    """Où poser le centre de la section pour que l'intérieur touche le doigt.
+
+    ⚠️ LE PLI AU SOMMET VENAIT D'ICI. La demi-hauteur exacte
+    b·(|cos α| + |sin α|) + r a un angle vif à α = 90° — pile au sommet, là où
+    la torsion tourne le plus vite. Toute la section y prenait une cassure,
+    visible de face comme un pli sur le chant (Thomas, 16/11/2026). On arrondit
+    |cos α| sous `lissage` : l'intérieur s'écarte alors du doigt d'au plus
+    b·lissage/2 au sommet (0,03 mm par défaut) et le touche partout ailleurs.
+
+    |sin α| n'est pas arrondi : il ne passe par zéro qu'aux deux bouts de la
+    torsion, où l'adouci ramène déjà la vitesse à zéro, donc sans cassure — et
+    l'arrondir écarterait l'intérieur du doigt sur toute la partie droite."""
+    b = a / 2 - r
+    return b * (_abs_lisse(np.cos(alpha), lissage) + np.abs(np.sin(alpha))) + r
+
+
 def demi_hauteur(alpha, a, r):
     """Demi-étendue radiale (et axiale) du carré rayonné tourné de alpha."""
     b = a / 2 - r
@@ -92,7 +117,7 @@ def _sections(p, prof, k0, H=None):
     sig = p["sens"]
     phi = -np.pi + 2 * np.pi * np.arange(M) / M
     alpha = loi_torsion(phi, p)
-    Rc = R_in + demi_hauteur(alpha, a, r)
+    Rc = R_in + rayon_centre(alpha, a, r, p.get("lissage_sommet", 0.0))
     uv = np.broadcast_to(prof.uv, (M,) + prof.uv.shape).copy()
     if H is not None:
         idx = np.nonzero(prof.face == k0)[0]
@@ -180,7 +205,7 @@ def ecart_raccord(p, m: Maillage) -> float:
     prof = m.profil
     a, r = p["cote"], p["rayon_arete"]
     alpha = float(loi_torsion(np.pi, p))
-    Rc = p["diametre_interieur"] / 2 + demi_hauteur(alpha, a, r)
+    Rc = p["diametre_interieur"] / 2 + rayon_centre(alpha, a, r, p.get("lissage_sommet", 0.0))
     c, s_ = np.cos(p["sens"] * alpha), np.sin(p["sens"] * alpha)
     u = prof.uv[:, 0] * c + prof.uv[:, 1] * s_
     v = -prof.uv[:, 0] * s_ + prof.uv[:, 1] * c

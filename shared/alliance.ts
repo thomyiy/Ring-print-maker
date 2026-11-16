@@ -19,6 +19,7 @@ export interface ParamsAlliance {
   arc_torsion_deg: number
   adouci: number
   sens: number
+  lissage_sommet: number
   hauteur_relief: number
   n_sections: number
   n_face: number
@@ -33,6 +34,7 @@ export const DEFAUTS: ParamsAlliance = {
   arc_torsion_deg: 170,
   adouci: 0.08,
   sens: 1,
+  lissage_sommet: 0.08,
   hauteur_relief: 0.18,
   n_sections: 1080,
   n_face: 40,
@@ -113,6 +115,19 @@ export function loiTorsion(phi: number, p: ParamsAlliance): number {
   const R = (x: number) => (x < e ? 0.5 * (x - (e / Math.PI) * Math.sin((Math.PI * x) / e)) : e / 2 + (x - e))
   const r = x <= 0.5 ? R(x) : (1 - e) - R(1 - x)
   return (T * r) / (1 - e)
+}
+
+/** |x|, arrondi en parabole sous d : jamais en dessous de |x|, raccord C1. */
+function absLisse(x: number, d: number): number {
+  const ax = Math.abs(x)
+  return d <= 0 || ax >= d ? ax : 0.5 * ((x * x) / d + d)
+}
+
+/** Voir `rayon_centre` dans moteur/alliance.py : le pli au sommet venait de
+ *  l'angle vif de |cos α| à 90°, arrondi ici sous `lissage`. */
+export function rayonCentre(alpha: number, a: number, r: number, lissage: number): number {
+  const b = a / 2 - r
+  return b * (absLisse(Math.cos(alpha), lissage) + Math.abs(Math.sin(alpha))) + r
 }
 
 export function demiHauteur(alpha: number, a: number, r: number): number {
@@ -220,7 +235,7 @@ function sections(p: ParamsAlliance, P: Profil, k0: number, H: Float64Array | nu
     const phi = -Math.PI + (2 * Math.PI * j) / M
     const al = loiTorsion(phi, p)
     alpha[j] = al
-    const Rc = Rin + demiHauteur(al, a, r)
+    const Rc = Rin + rayonCentre(al, a, r, p.lissage_sommet)
     const c = Math.cos(sig * al), s = Math.sin(sig * al)
     const sp = Math.sin(phi), cp = Math.cos(phi)
     let q = 0
