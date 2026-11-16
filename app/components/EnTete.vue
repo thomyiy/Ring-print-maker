@@ -1,5 +1,13 @@
 <script setup lang="ts">
 const marque = useMarque()
+// L'icône d'onglet suit la marque. La clé remplace celle de nuxt.config au
+// lieu d'en ajouter une seconde, que le navigateur aurait pu préférer.
+useHead({
+  link: [
+    { key: 'icone', rel: 'icon', type: 'image/png', href: marque.favicon },
+    { key: 'icone-apple', rel: 'apple-touch-icon', href: marque.iconeApple },
+  ],
+})
 </script>
 
 <template>

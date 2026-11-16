@@ -36,7 +36,8 @@ export default defineNuxtConfig({
         { name: 'robots', content: 'noindex, nofollow' },
       ],
       link: [
-        { rel: 'icon', type: 'image/png', href: '/favicon-32.png' },
+        { key: 'icone', rel: 'icon', type: 'image/png', href: '/favicon-32.png' },
+        { key: 'icone-apple', rel: 'apple-touch-icon', href: '/logo-mark.png' },
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
         {

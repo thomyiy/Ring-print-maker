@@ -11,12 +11,16 @@ export interface Marque {
   nom: string
   logo: string
   base: string
+  favicon: string
+  iconeApple: string
 }
 
 const MARQUES: Record<Marque['id'], Marque> = {
-  raw: { id: 'raw', nom: 'Rainbow Ant Workshop', logo: '/logo-mark.png', base: '' },
+  raw: { id: 'raw', nom: 'Rainbow Ant Workshop', logo: '/logo-mark.png', base: '',
+    favicon: '/favicon-32.png', iconeApple: '/logo-mark.png' },
   // Client de l'atelier ; logo utilisé avec son accord (Thomas, 16/11/2026).
-  joia: { id: 'joia', nom: 'Joia Bijou', logo: '/marques/joia.jpg', base: '/joia' },
+  joia: { id: 'joia', nom: 'Joia Bijou', logo: '/marques/joia.jpg', base: '/joia',
+    favicon: '/marques/joia-favicon-32.png', iconeApple: '/marques/joia-apple-touch-icon.png' },
 }
 
 export function useMarque(): Marque {
