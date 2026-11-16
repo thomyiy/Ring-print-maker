@@ -5,6 +5,14 @@ au sommet. Le moteur de géométrie est en Python (numpy + scipy) et le site est
 avec la DA de rainbowantworkshop.fr. Le STL part en résine calcinable, puis en fonte à cire
 perdue.
 
+## Les deux pages
+
+- **`/`, la page client** : on ajoute la photo de son empreinte, on choisit le métal (argent 925,
+  or jaune, rose ou gris 18 k) et les dimensions (taille de doigt, largeur du fil, relief). La
+  bague se recalcule en 3D, avec son poids estimé.
+- **`/atelier`, l'outil complet** : cadrage de la bande, traitement de l'image, forme du fil,
+  maillage de fabrication, rendus de contrôle, masque et bande déroulée, et tous les contrôles.
+
 ## Lancer
 
 ```bash

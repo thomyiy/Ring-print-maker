@@ -1,369 +1,272 @@
+<!-- La page client : une photo d'empreinte, un métal, des dimensions, et la
+     bague en trois dimensions. Tout le reste — cadrage de la bande, traitement
+     de l'image, maillage — se règle par défaut ; l'atelier garde la main sur
+     /atelier. -->
 <script setup lang="ts">
-type Schema = Record<string, { defaut: any; min: number; max: number; pas: number; unite: string; libelle: string }>
+useHead({ title: 'Alliance empreinte — Rainbow Ant Workshop' })
 
-const { data: schema } = await useFetch<Schema & { ok: boolean }>('/api/schema')
+// — Les choix ————————————————————————————————————————————————————
+// Densités : or 750 à 15,5 g/cm³ et argent 925 à 10,36 g/cm³, les valeurs de
+// l'atelier. Les trois ors 750 partagent la même : l'écart réel entre jaune,
+// rose et gris (quelques pour cent) est sous la précision d'une pesée avant fonte.
+const METAUX = [
+  { id: 'argent925', nom: 'Argent 925', densite: 10.36, teinte: 0xdcdcdc, pastille: '#D9D9D9' },
+  { id: 'or-jaune', nom: 'Or jaune 18 k', densite: 15.5, teinte: 0xe3b864, pastille: '#E3B864' },
+  { id: 'or-rose', nom: 'Or rose 18 k', densite: 15.5, teinte: 0xe7ad95, pastille: '#E7AD95' },
+  { id: 'or-gris', nom: 'Or gris 18 k', densite: 15.5, teinte: 0xe9e7e1, pastille: '#E9E7E1' },
+] as const
+const LARGEURS = [
+  { cote: 1.5, nom: 'Fine', detail: '1,5 mm' },
+  { cote: 1.8, nom: 'Classique', detail: '1,8 mm' },
+  { cote: 2.2, nom: 'Affirmée', detail: '2,2 mm' },
+]
+const RELIEFS = [
+  { h: 0.18, nom: 'Délicat', detail: '0,18 mm' },
+  { h: 0.25, nom: 'Marqué', detail: '0,25 mm' },
+  { h: 0.3, nom: 'Profond', detail: '0,30 mm' },
+]
+const TAILLES = Array.from({ length: 27 }, (_, i) => 44 + i)
 
-// — Les réglages ——————————————————————————————————————————————————
-const r = reactive({
-  taille: 54,
-  hauteur_relief: 0.18,
-  zone_auto: true,
-  angle_bande_deg: 90,
-  decalage_bande: 0,
-  cote: 1.8,
-  rayon_arete: 0.15,
-  torsion_deg: 180,
-  arc_torsion_deg: 170,
-  adouci: 0.08,
-  sens: 1,
-  cretes_largeur: 7,
-  flou: 0.12,
-  douceur: 0.08,
-  aire_min_mm2: 0.01,
-  agrandissement: 6,
-  cretes_noires: true,
-  miroir: false,
-  qualite: 'fabrication' as 'apercu' | 'fabrication',
-})
-// Taille française = tour du doigt en mm ; 54 → 17,2 mm. Le diamètre reste
-// modifiable à la main après coup, pour les tables d'atelier qui arrondissent autrement.
-const diametre = ref(17.2)
-watch(() => r.taille, (t) => { diametre.value = Math.round((t / Math.PI) * 10) / 10 })
-const borne = (k: string) => schema.value?.[k] ?? { min: 0, max: 1, pas: 0.01, unite: '' }
-
-function params() {
-  const { zone_auto, qualite, ...reste } = r
-  return {
-    ...reste,
-    diametre_interieur: diametre.value,
-    angle_bande_deg: zone_auto ? null : r.angle_bande_deg,
-    decalage_bande: zone_auto ? 0 : r.decalage_bande,
-    n_sections: qualite === 'fabrication' ? 1440 : 720,
-    n_face: qualite === 'fabrication' ? 50 : 26,
-  }
-}
+const choix = reactive({ metal: 'or-jaune', taille: 54, cote: 1.8, relief: 0.25 })
+const metal = computed(() => METAUX.find((m) => m.id === choix.metal)!)
 
 // — L'empreinte ———————————————————————————————————————————————————
 const depot = ref<{ id: string; nom: string; image: string } | null>(null)
-const envoi = ref(false)
+const etat = ref<'vide' | 'envoi' | 'calcul' | 'pret' | 'erreur'>('vide')
 const erreur = ref('')
+const resultat = ref<any>(null)
+const glisse = ref(false)
 
-async function deposer(fichier?: File) {
+async function deposer(fichier?: File | null, demo = false) {
+  if (!fichier && !demo) return
   erreur.value = ''
-  envoi.value = true
+  etat.value = 'envoi'
   try {
     const fd = new FormData()
     if (fichier) fd.append('image', fichier)
-    depot.value = await $fetch('/api/empreinte' + (fichier ? '' : '?demo=1'), { method: 'POST', body: fd })
-    resultat.value = null
-    await analyser()
+    depot.value = await $fetch('/api/empreinte' + (demo ? '?demo=1' : ''), { method: 'POST', body: fd })
+    await calculer()
   } catch (e: any) {
-    erreur.value = e?.data?.statusMessage ?? e?.statusMessage ?? String(e)
-  } finally {
-    envoi.value = false
+    montrerErreur(e)
   }
 }
-function surDepot(ev: DragEvent) {
-  const f = ev.dataTransfer?.files?.[0]
-  if (f) deposer(f)
+
+function montrerErreur(e: any) {
+  etat.value = 'erreur'
+  const m = e?.data?.statusMessage ?? e?.statusMessage ?? ''
+  erreur.value = /empreinte|crête|bande/i.test(m)
+    ? 'Nous n’avons pas trouvé d’empreinte nette sur cette photo. Essayez une image plus contrastée, l’empreinte bien à plat.'
+    : m || 'Le calcul n’a pas abouti. Réessayez dans un instant.'
 }
 
-// — Analyse (rapide) et génération ————————————————————————————————————
-const analyse = ref<any>(null)
-const resultat = ref<any>(null)
-const enAnalyse = ref(false)
-const enGeneration = ref(false)
-
-async function calcul(action: 'analyser' | 'generer') {
-  if (!depot.value) return null
-  erreur.value = ''
+// Le dernier calcul demandé gagne : un réglage changé pendant un calcul en
+// relance un, et la réponse du précédent est ignorée.
+let numero = 0
+async function calculer() {
+  if (!depot.value) return
+  const n = ++numero
+  etat.value = 'calcul'
   try {
-    return await $fetch<any>('/api/calcul', { method: 'POST', body: { id: depot.value.id, action, params: params() } })
-  } catch (e: any) {
-    erreur.value = e?.data?.statusMessage ?? e?.statusMessage ?? 'Le calcul a échoué'
-    return null
+    const r = await $fetch<any>('/api/calcul', {
+      method: 'POST',
+      body: {
+        id: depot.value.id,
+        action: 'generer',
+        leger: true,
+        params: {
+          taille: choix.taille,
+          diametre_interieur: Math.round((choix.taille / Math.PI) * 10) / 10,
+          cote: choix.cote,
+          hauteur_relief: choix.relief,
+          // Entre l'aperçu et la fabrication : à 720 × 26 les crêtes sortaient
+          // en dents de scie à l'écran, et le client jugeait l'empreinte là-dessus.
+          n_sections: 1080,
+          n_face: 40,
+        },
+      },
+    })
+    if (n !== numero) return
+    resultat.value = r
+    etat.value = 'pret'
+  } catch (e) {
+    if (n === numero) montrerErreur(e)
   }
 }
 
-async function analyser() {
-  enAnalyse.value = true
-  const a = await calcul('analyser')
-  enAnalyse.value = false
-  if (a) {
-    analyse.value = a
-    // Quand la zone est automatique, on reprend ce qu'elle a trouvé : passer
-    // en manuel part de là au lieu de repartir de zéro.
-    if (r.zone_auto) {
-      r.angle_bande_deg = Math.round(a.bande.angle_deg)
-      r.decalage_bande = Math.round(a.bande.decalage_mm * 20) / 20
-    }
-  }
-}
-
-async function generer() {
-  enGeneration.value = true
-  const g = await calcul('generer')
-  enGeneration.value = false
-  if (g) {
-    resultat.value = g
-    analyse.value = g
-    onglet.value = 'apercu'
-  }
-}
-
-// Les réglages qui touchent l'empreinte relancent l'analyse, un peu après.
-const cleAnalyse = computed(() => JSON.stringify([
-  r.zone_auto, r.zone_auto ? 0 : r.angle_bande_deg, r.zone_auto ? 0 : r.decalage_bande,
-  r.cote, r.rayon_arete, r.cretes_largeur, r.flou, r.douceur, r.aire_min_mm2,
-  r.agrandissement, r.cretes_noires, r.miroir, r.hauteur_relief,
-]))
+// Le métal ne change que la teinte et le poids : pas de recalcul.
 let minuterie: ReturnType<typeof setTimeout> | undefined
-watch(cleAnalyse, () => {
+watch(() => [choix.taille, choix.cote, choix.relief], () => {
   clearTimeout(minuterie)
-  if (depot.value) minuterie = setTimeout(analyser, 700)
+  if (depot.value) minuterie = setTimeout(calculer, 400)
 })
-const perime = computed(() => resultat.value && JSON.stringify(resultat.value.parametres_envoyes) !== JSON.stringify(params()))
-watch(resultat, (g) => { if (g) g.parametres_envoyes = params() })
 
-// — Affichage ————————————————————————————————————————————————————
-const onglet = ref<'apercu' | 'general' | 'dessus' | 'relief' | 'masque' | 'bande'>('masque')
-const metal = ref<'or' | 'argent'>('or')
-const vue3d = ref<{ vue: (n: 'dessus' | 'face' | 'biais') => void } | null>(null)
-const ONGLETS = [
-  { cle: 'apercu', nom: '3D', faut: 'stl' },
-  { cle: 'general', nom: 'Vue générale', faut: 'general' },
-  { cle: 'dessus', nom: 'Dessus, portée', faut: 'dessus' },
-  { cle: 'relief', nom: 'Relief', faut: 'relief' },
-  { cle: 'masque', nom: 'Empreinte et cadre', faut: 'masque' },
-  { cle: 'bande', nom: 'Bande déroulée', faut: 'bande' },
-] as const
-const images = computed(() => ({ ...(analyse.value?.images ?? {}), ...(resultat.value?.images ?? {}) }))
-function dispo(faut: string) {
-  return faut === 'stl' ? !!resultat.value?.stl : !!images.value[faut]
-}
-
-const f = (x: number, d = 2) => (x ?? 0).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d })
-const c = computed(() => resultat.value?.controles)
-const b = computed(() => analyse.value?.bande)
+const volume = computed(() => resultat.value?.controles?.volume_mm3 as number | undefined)
+const poids = (d: number) => (volume.value ? (volume.value / 1000) * d : null)
+const f = (x: number | null | undefined, d = 1) =>
+  x == null ? '—' : x.toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d })
+const diametre = computed(() => Math.round((choix.taille / Math.PI) * 10) / 10)
+const largeurMax = computed(() => resultat.value?.controles?.largeur_max as number | undefined)
 </script>
 
 <template>
-  <div class="min-h-screen">
-    <!-- En-tête -->
+  <div class="flex min-h-screen flex-col">
     <header class="border-b border-line">
       <div class="flex items-center justify-between px-5 py-4 lg:px-10">
         <div class="flex items-center gap-3">
           <img src="/logo-mark.png" alt="" class="h-8 w-auto">
           <span class="text-[17px] font-medium tracking-tight">Rainbow Ant Workshop</span>
         </div>
-        <span class="eyebrow">Outil d’atelier</span>
+        <NuxtLink to="/atelier" class="text-[13px] text-muted hover:text-ink">Atelier</NuxtLink>
       </div>
     </header>
 
-    <div class="px-5 pb-6 pt-10 lg:px-10">
-      <p class="eyebrow">Alliance torsadée</p>
-      <div class="filet-teinte mt-3" />
-      <h1 class="mt-5 text-[40px] sm:text-[52px]">Empreinte en relief</h1>
-      <p class="mt-3 max-w-[68ch]">
-        Fil carré, un demi-tour de torsion centré au sommet, et l’empreinte qui court sur la face
-        qui passe dessus. Le STL est prêt pour la résine calcinable et la fonte à cire perdue.
-      </p>
-    </div>
+    <div class="grid flex-1 items-start lg:grid-cols-[1fr_440px]">
+      <!-- ─── La bague ─── -->
+      <div class="relative min-h-[56vh] bg-paper-2 lg:sticky lg:top-0 lg:h-[calc(100vh-65px)]">
+        <ClientOnly>
+          <VueAlliance v-if="resultat?.stl" :url="resultat.stl" :teinte="metal.teinte" />
+        </ClientOnly>
 
-    <div class="grid gap-0 border-t border-line lg:grid-cols-[400px_1fr]">
-      <!-- ─── Réglages ─── -->
-      <aside class="border-line lg:border-r">
-        <!-- 1. L'image -->
-        <section class="border-b border-line px-5 py-6 lg:px-8">
-          <p class="eyebrow">01 · L’empreinte</p>
+        <div v-if="!resultat" class="absolute inset-0 flex flex-col items-center justify-center px-8 text-center">
+          <p class="eyebrow">Alliance empreinte</p>
+          <div class="filet-teinte mx-auto mt-3" />
+          <h1 class="mt-5 text-[40px] sm:text-[52px]">Votre empreinte, en relief</h1>
+          <p class="mx-auto mt-4 max-w-[52ch]">
+            Un fil carré qui fait un demi-tour sur le dessus de la main. Sur la face qui passe
+            au sommet, les crêtes de votre empreinte, en relief dans le métal.
+          </p>
+          <p v-if="etat === 'envoi' || etat === 'calcul'" class="eyebrow mt-8">Votre bague se dessine…</p>
+        </div>
+
+        <p
+          v-if="resultat && etat === 'calcul'"
+          class="absolute left-5 top-5 border border-line bg-paper px-3 py-1 text-[13px] text-txt"
+        >
+          Mise à jour…
+        </p>
+        <p v-if="resultat" class="absolute bottom-5 left-5 text-[13px] text-txt">
+          Faites tourner la bague du doigt ou de la souris.
+        </p>
+      </div>
+
+      <!-- ─── Les choix ─── -->
+      <aside class="border-line lg:border-l">
+        <!-- 1. L'empreinte -->
+        <section class="border-b border-line px-6 py-7 lg:px-9">
+          <div class="flex items-baseline gap-3">
+            <span class="valeur text-muted">01</span>
+            <h2 class="text-[20px] font-medium">Votre empreinte</h2>
+          </div>
           <label
-            class="mt-4 flex cursor-pointer flex-col items-center justify-center border border-dashed border-line bg-paper-2 px-4 py-6 text-center hover:border-ink"
-            @dragover.prevent
-            @drop.prevent="surDepot"
+            class="mt-5 flex cursor-pointer items-center gap-4 border border-dashed px-4 py-4 transition-colors"
+            :class="glisse ? 'border-ink bg-vert-pale' : 'border-line bg-paper-2 hover:border-ink'"
+            @dragover.prevent="glisse = true"
+            @dragleave="glisse = false"
+            @drop.prevent="glisse = false; deposer($event.dataTransfer?.files?.[0])"
           >
-            <img v-if="depot" :src="depot.image" alt="Empreinte déposée" class="mb-3 max-h-36 w-auto">
-            <span class="text-[14px] text-ink">{{ depot ? depot.nom : 'Déposer l’image ici' }}</span>
-            <span class="mt-1 text-[13px] text-muted">PNG ou JPG, noir et blanc ou niveaux de gris</span>
+            <img v-if="depot" :src="depot.image" alt="Votre empreinte" class="h-16 w-16 border border-line bg-paper object-contain">
+            <span v-else class="flex h-16 w-16 items-center justify-center border border-line bg-paper text-[22px] text-muted">+</span>
+            <span class="flex flex-col">
+              <span class="text-[15px] text-ink">{{ depot ? 'Changer de photo' : 'Ajouter la photo de votre empreinte' }}</span>
+              <span class="text-[13px] text-txt">Une empreinte encrée sur papier blanc, photographiée bien à plat.</span>
+            </span>
             <input type="file" accept="image/*" class="sr-only" @change="deposer(($event.target as HTMLInputElement).files?.[0])">
           </label>
-          <button class="lien mt-3 text-[14px]" :disabled="envoi" @click="deposer()">
-            Essayer avec l’empreinte de démonstration
+          <button v-if="!depot" type="button" class="lien mt-3 text-[14px]" @click="deposer(null, true)">
+            Voir avec une empreinte d’exemple
           </button>
-          <p v-if="envoi" class="mt-2 text-[13px] text-muted">Envoi…</p>
+          <p v-if="etat === 'erreur'" class="mt-3 text-[13px] text-framboise">{{ erreur }}</p>
         </section>
 
-        <!-- 2. Les trois questions -->
-        <section class="border-b border-line bg-bleu-pale px-5 py-6 lg:px-8">
-          <p class="valeur text-bleu-texte">02</p>
-          <h2 class="mt-1 text-[20px] font-medium">Les trois choses à décider</h2>
-          <div class="mt-5 space-y-6">
-            <div>
-              <Reglage v-model="r.taille" libelle="Taille de doigt" :min="40" :max="75" :pas="0.5" />
-              <Reglage v-model="diametre" class="mt-4" libelle="Diamètre intérieur" :min="12" :max="24" :pas="0.01" unite="mm" />
-            </div>
-            <Reglage
-              v-model="r.hauteur_relief" libelle="Hauteur des crêtes" :min="0.08" :max="0.4" :pas="0.01" unite="mm"
-              aide="0,18 mm pour l’effet ; 0,25 à 0,3 mm tiennent mieux au porter quotidien."
-            />
-            <div>
-              <span class="champ-intitule">Zone de l’empreinte</span>
-              <div class="mt-2 flex gap-5 text-[14px]">
-                <label class="flex items-center gap-2"><input v-model="r.zone_auto" type="radio" :value="true"> Automatique</label>
-                <label class="flex items-center gap-2"><input v-model="r.zone_auto" type="radio" :value="false"> Je cadre</label>
-              </div>
-              <p class="mt-1 text-[13px] text-txt">
-                La bande en biais où les crêtes filent dans la longueur, d’un bord à l’autre de l’empreinte.
-              </p>
-              <div v-if="!r.zone_auto" class="mt-4 space-y-4">
-                <Reglage v-model="r.angle_bande_deg" libelle="Angle" :min="0" :max="179" :pas="1" unite="°" />
-                <Reglage v-model="r.decalage_bande" libelle="Décalage latéral" :min="-6" :max="6" :pas="0.05" unite="mm" />
-              </div>
-            </div>
+        <!-- 2. Le métal -->
+        <section class="border-b border-line px-6 py-7 lg:px-9">
+          <div class="flex items-baseline gap-3">
+            <span class="valeur text-muted">02</span>
+            <h2 class="text-[20px] font-medium">Le métal</h2>
+          </div>
+          <div class="mt-5 grid grid-cols-2 gap-px border border-line bg-line">
+            <button
+              v-for="m in METAUX" :key="m.id" type="button"
+              class="flex items-center gap-3 bg-paper px-4 py-3 text-left transition-colors"
+              :class="choix.metal === m.id ? 'outline outline-2 -outline-offset-2 outline-ink' : 'hover:bg-paper-2'"
+              :aria-pressed="choix.metal === m.id"
+              @click="choix.metal = m.id"
+            >
+              <span class="h-5 w-5 shrink-0 border border-line" :style="{ background: m.pastille }" />
+              <span class="flex flex-col">
+                <span class="text-[14px] text-ink">{{ m.nom }}</span>
+                <span class="valeur text-[12px] text-txt">≈ {{ f(poids(m.densite), 1) }} g</span>
+              </span>
+            </button>
           </div>
         </section>
 
-        <!-- 3. Forme -->
-        <details class="group border-b border-line px-5 py-5 lg:px-8">
-          <summary class="flex cursor-pointer list-none items-center justify-between">
-            <span class="eyebrow">03 · Forme du fil</span><span class="text-muted group-open:rotate-45">+</span>
-          </summary>
-          <div class="mt-5 space-y-5">
-            <Reglage v-model="r.cote" libelle="Côté du carré" :min="1.2" :max="3" :pas="0.05" unite="mm" />
-            <Reglage v-model="r.rayon_arete" libelle="Rayon des arêtes" :min="0.05" :max="0.4" :pas="0.01" unite="mm" />
-            <Reglage v-model="r.torsion_deg" libelle="Torsion" :min="180" :max="360" :pas="180" unite="°" aide="Un nombre impair de demi-tours ferme l’anneau sur la face opposée." />
-            <Reglage v-model="r.arc_torsion_deg" libelle="Arc de la torsion" :min="60" :max="300" :pas="1" unite="°" />
-            <Reglage v-model="r.adouci" libelle="Adouci aux raccords" :min="0" :max="0.3" :pas="0.01" aide="Part de l’arc où la vitesse de rotation monte et descend." />
-            <div>
-              <span class="champ-intitule">Sens de la torsion</span>
-              <div class="mt-2 flex gap-5 text-[14px]">
-                <label class="flex items-center gap-2"><input v-model="r.sens" type="radio" :value="1"> Chant gauche dessus</label>
-                <label class="flex items-center gap-2"><input v-model="r.sens" type="radio" :value="-1"> Inverse</label>
-              </div>
-            </div>
+        <!-- 3. Les dimensions -->
+        <section class="border-b border-line px-6 py-7 lg:px-9">
+          <div class="flex items-baseline gap-3">
+            <span class="valeur text-muted">03</span>
+            <h2 class="text-[20px] font-medium">Les dimensions</h2>
           </div>
-        </details>
 
-        <!-- 4. Traitement de l'image -->
-        <details class="group border-b border-line px-5 py-5 lg:px-8">
-          <summary class="flex cursor-pointer list-none items-center justify-between">
-            <span class="eyebrow">04 · Traitement de l’image</span><span class="text-muted group-open:rotate-45">+</span>
-          </summary>
-          <div class="mt-5 space-y-5">
-            <Reglage v-model="r.cretes_largeur" libelle="Crêtes dans la largeur" :min="4" :max="10" :pas="0.5" aide="Règle l’échelle : 6 à 8 sur 1,5 mm." />
-            <Reglage v-model="r.agrandissement" libelle="Agrandissement" :min="2" :max="8" :pas="1" unite="×" />
-            <Reglage v-model="r.flou" libelle="Flou" :min="0" :max="0.4" :pas="0.01" unite="pér." />
-            <Reglage v-model="r.douceur" libelle="Douceur du seuil" :min="0.02" :max="0.3" :pas="0.01" aide="Plus haut, flancs plus en pente." />
-            <Reglage v-model="r.aire_min_mm2" libelle="Points isolés retirés sous" :min="0" :max="0.05" :pas="0.001" unite="mm²" />
-            <label class="flex items-center gap-2 text-[14px]"><input v-model="r.cretes_noires" type="checkbox"> Crêtes noires sur l’image</label>
-            <label class="flex items-center gap-2 text-[14px]"><input v-model="r.miroir" type="checkbox"> Retourner l’empreinte (miroir)</label>
+          <label class="champ-intitule mt-6" for="taille">Taille de doigt</label>
+          <div class="mt-2 flex items-center gap-4">
+            <select id="taille" v-model.number="choix.taille" class="champ w-32">
+              <option v-for="t in TAILLES" :key="t" :value="t">{{ t }}</option>
+            </select>
+            <span class="text-[13px] text-txt">diamètre intérieur <span class="valeur">{{ f(diametre) }} mm</span></span>
           </div>
-        </details>
 
-        <!-- 5. Générer -->
-        <section class="px-5 py-6 lg:px-8">
-          <span class="champ-intitule">Maillage</span>
-          <div class="mt-2 flex gap-5 text-[14px]">
-            <label class="flex items-center gap-2"><input v-model="r.qualite" type="radio" value="fabrication"> Fabrication <span class="valeur text-muted">1440 × 50</span></label>
-            <label class="flex items-center gap-2"><input v-model="r.qualite" type="radio" value="apercu"> Aperçu <span class="valeur text-muted">720 × 26</span></label>
+          <span class="champ-intitule mt-6">Largeur du fil</span>
+          <div class="mt-2 grid grid-cols-3 gap-px border border-line bg-line">
+            <button
+              v-for="l in LARGEURS" :key="l.cote" type="button"
+              class="bg-paper px-3 py-3 text-center"
+              :class="choix.cote === l.cote ? 'outline outline-2 -outline-offset-2 outline-ink' : 'hover:bg-paper-2'"
+              :aria-pressed="choix.cote === l.cote"
+              @click="choix.cote = l.cote"
+            >
+              <span class="block text-[14px] text-ink">{{ l.nom }}</span>
+              <span class="valeur block text-[12px] text-txt">{{ l.detail }}</span>
+            </button>
           </div>
-          <button class="btn-primary mt-5 w-full" :disabled="!depot || enGeneration" @click="generer">
-            {{ enGeneration ? 'Calcul en cours…' : 'Générer le STL' }}
+
+          <span class="champ-intitule mt-6">Relief de l’empreinte</span>
+          <div class="mt-2 grid grid-cols-3 gap-px border border-line bg-line">
+            <button
+              v-for="r in RELIEFS" :key="r.h" type="button"
+              class="bg-paper px-3 py-3 text-center"
+              :class="choix.relief === r.h ? 'outline outline-2 -outline-offset-2 outline-ink' : 'hover:bg-paper-2'"
+              :aria-pressed="choix.relief === r.h"
+              @click="choix.relief = r.h"
+            >
+              <span class="block text-[14px] text-ink">{{ r.nom }}</span>
+              <span class="valeur block text-[12px] text-txt">{{ r.detail }}</span>
+            </button>
+          </div>
+          <p class="mt-2 text-[13px] text-txt">Marqué ou profond tiennent mieux au porter de tous les jours.</p>
+        </section>
+
+        <!-- Récapitulatif -->
+        <section class="px-6 py-7 lg:px-9">
+          <dl class="space-y-2 text-[14px]">
+            <div class="flex justify-between"><dt>Métal</dt><dd>{{ metal.nom }}</dd></div>
+            <div class="flex justify-between"><dt>Taille</dt><dd class="valeur">{{ choix.taille }} · Ø {{ f(diametre) }} mm</dd></div>
+            <div class="flex justify-between"><dt>Fil</dt><dd class="valeur">{{ f(choix.cote, 1) }} mm · jusqu’à {{ f(largeurMax, 1) }} mm dans la torsion</dd></div>
+            <div class="flex justify-between"><dt>Poids estimé</dt><dd class="valeur">{{ f(poids(metal.densite), 1) }} g</dd></div>
+          </dl>
+          <a
+            v-if="resultat?.stl"
+            :href="resultat.stl"
+            download="alliance-empreinte.stl"
+            class="btn-primary mt-6 w-full"
+          >
+            Télécharger le fichier 3D
+          </a>
+          <button v-else type="button" class="btn-primary mt-6 w-full" disabled>
+            Ajoutez d’abord votre empreinte
           </button>
-          <p v-if="!depot" class="mt-2 text-[13px] text-muted">Déposer d’abord une empreinte.</p>
-          <p v-if="erreur" class="mt-3 text-[13px] text-framboise">{{ erreur }}</p>
         </section>
       </aside>
-
-      <!-- ─── Résultats ─── -->
-      <main class="min-w-0">
-        <nav class="flex flex-wrap gap-x-6 gap-y-2 border-b border-line px-5 py-4 lg:px-8">
-          <button
-            v-for="o in ONGLETS" :key="o.cle"
-            class="text-[14px] underline-offset-[6px]"
-            :class="[onglet === o.cle ? 'text-ink underline decoration-vert decoration-2' : 'text-txt', !dispo(o.faut) && 'opacity-40']"
-            :disabled="!dispo(o.faut)"
-            @click="onglet = o.cle"
-          >
-            {{ o.nom }}
-          </button>
-          <span v-if="enAnalyse" class="ml-auto eyebrow">Analyse…</span>
-        </nav>
-
-        <div class="relative h-[62vh] min-h-[420px] bg-paper-2">
-          <template v-if="onglet === 'apercu' && resultat?.stl">
-            <VueAlliance ref="vue3d" :url="resultat.stl" :metal="metal" />
-            <div class="absolute bottom-4 left-4 flex gap-4 text-[13px]">
-              <button class="lien" @click="vue3d?.vue('biais')">Biais</button>
-              <button class="lien" @click="vue3d?.vue('dessus')">Dessus</button>
-              <button class="lien" @click="vue3d?.vue('face')">Face</button>
-              <span class="text-line">|</span>
-              <button class="lien" @click="metal = metal === 'or' ? 'argent' : 'or'">{{ metal === 'or' ? 'Voir en argent' : 'Voir en or' }}</button>
-            </div>
-          </template>
-          <img
-            v-else-if="images[onglet]"
-            :src="images[onglet]"
-            :alt="onglet"
-            class="absolute inset-0 h-full w-full object-contain p-4"
-          >
-          <div v-else class="flex h-full items-center justify-center px-8 text-center">
-            <p class="max-w-[46ch] text-muted">
-              Déposez une empreinte : le cadrage de la bande s’affiche ici, puis la bague une fois générée.
-            </p>
-          </div>
-          <p v-if="perime" class="absolute right-4 top-4 bg-paper px-3 py-1 text-[12px] text-txt border border-line">
-            Réglages modifiés depuis la génération
-          </p>
-        </div>
-
-        <!-- Chiffres -->
-        <div class="grid border-t border-line md:grid-cols-3">
-          <section class="border-line px-5 py-6 md:border-r lg:px-8">
-            <p class="eyebrow">La bande</p>
-            <dl v-if="b" class="mt-4 space-y-2 text-[14px]">
-              <div class="flex justify-between"><dt>Angle, décalage</dt><dd class="valeur">{{ f(b.angle_deg, 0) }}° · {{ f(b.decalage_mm) }} mm</dd></div>
-              <div class="flex justify-between"><dt>Longueur × largeur</dt><dd class="valeur">{{ f(b.longueur_mm) }} × {{ f(b.largeur_mm) }} mm</dd></div>
-              <div class="flex justify-between"><dt>Crêtes alignées</dt><dd class="valeur">{{ f(100 * b.alignement, 0) }} %</dd></div>
-              <div class="flex justify-between"><dt>Crêtes dans la largeur</dt><dd class="valeur">{{ f(b.cretes_largeur, 1) }}</dd></div>
-              <div class="flex justify-between"><dt>Période des crêtes</dt><dd class="valeur">{{ f(b.periode_mm, 3) }} mm · {{ f(b.periode_px, 1) }} px</dd></div>
-              <div class="flex justify-between"><dt>Échelle</dt><dd class="valeur">{{ f(b.mm_par_px * 1000, 1) }} µm/px</dd></div>
-            </dl>
-            <p v-else class="mt-4 text-[14px] text-muted">—</p>
-          </section>
-
-          <section class="border-line px-5 py-6 md:border-r lg:px-8">
-            <p class="eyebrow">La pièce</p>
-            <dl v-if="c" class="mt-4 space-y-2 text-[14px]">
-              <div class="flex justify-between"><dt>Volume</dt><dd class="valeur">{{ f(c.volume_mm3, 1) }} mm³</dd></div>
-              <div class="flex justify-between"><dt>Or 750 <span class="text-muted">(15,5)</span></dt><dd class="valeur">{{ f(c.poids_or_750_g) }} g</dd></div>
-              <div class="flex justify-between"><dt>Argent 925 <span class="text-muted">(10,36)</span></dt><dd class="valeur">{{ f(c.poids_argent_925_g) }} g</dd></div>
-              <div class="flex justify-between"><dt>Ø extérieur maxi</dt><dd class="valeur">{{ f(c.diametre_exterieur_max) }} mm</dd></div>
-              <div class="flex justify-between"><dt>Largeur maxi</dt><dd class="valeur">{{ f(c.largeur_max) }} mm</dd></div>
-              <div class="flex justify-between"><dt>Arc en relief</dt><dd class="valeur">{{ f(c.longueur_arc_relief_mm) }} mm</dd></div>
-            </dl>
-            <p v-else class="mt-4 text-[14px] text-muted">Générer pour mesurer.</p>
-            <a v-if="resultat?.stl" :href="resultat.stl" class="lien mt-5 inline-block text-[14px]" download="alliance-empreinte.stl">
-              Télécharger le STL
-            </a>
-          </section>
-
-          <section class="px-5 py-6 lg:px-8">
-            <p class="eyebrow">Contrôles</p>
-            <dl v-if="c" class="mt-4 space-y-2 text-[14px]">
-              <div class="flex justify-between"><dt>Étanche, 2 triangles par arête</dt><dd class="valeur" :class="c.etanche ? 'text-vert-texte' : 'text-framboise'">{{ c.etanche ? 'oui' : `non (${c.aretes_non_partagees_par_2})` }}</dd></div>
-              <div class="flex justify-between"><dt>Normales sortantes</dt><dd class="valeur">{{ f(100 * c.normales_sortantes, 2) }} %</dd></div>
-              <div class="flex justify-between"><dt>Ø intérieur mini / cote</dt><dd class="valeur">{{ f(c.diametre_interieur_min, 3) }} / {{ f(c.diametre_interieur_cote) }}</dd></div>
-              <div class="flex justify-between"><dt>Écart au raccord</dt><dd class="valeur">{{ c.ecart_raccord.toExponential(1) }} mm</dd></div>
-              <div class="flex justify-between"><dt>Pas tour / face</dt><dd class="valeur">{{ f(c.pas_tour_mm, 3) }} / {{ f(c.pas_face_mm, 3) }} mm</dd></div>
-              <div class="flex justify-between"><dt>Triangles</dt><dd class="valeur">{{ c.triangles.toLocaleString('fr-FR') }}</dd></div>
-            </dl>
-            <p v-else class="mt-4 text-[14px] text-muted">—</p>
-            <ul v-if="analyse?.avertissements?.length" class="mt-4 space-y-1 text-[13px] text-txt">
-              <li v-for="(a, i) in analyse.avertissements" :key="i">— {{ a }}</li>
-            </ul>
-          </section>
-        </div>
-      </main>
     </div>
   </div>
 </template>

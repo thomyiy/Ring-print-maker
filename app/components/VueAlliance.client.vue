@@ -6,16 +6,16 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js'
 import { STLLoader } from 'three/examples/jsm/loaders/STLLoader.js'
+import { mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 
-const props = defineProps<{ url: string | null; metal: 'or' | 'argent' }>()
+const props = defineProps<{ url: string | null; teinte: number; fond?: number }>()
 const hote = ref<HTMLDivElement>()
 const chargement = ref(false)
 
-const TEINTES = { or: 0xe0b765, argent: 0xdcdcdc }
 let renderer: WebGLRenderer, scene: Scene, camera: PerspectiveCamera, controls: OrbitControls
 let maillage: Mesh | null = null
 let anim = 0
-const matiere = new MeshPhysicalMaterial({ metalness: 1, roughness: 0.28, color: TEINTES.or })
+const matiere = new MeshPhysicalMaterial({ metalness: 1, roughness: 0.26 })
 
 function taille() {
   if (!hote.value) return
@@ -32,7 +32,7 @@ onMounted(() => {
   renderer.toneMapping = ACESFilmicToneMapping
   hote.value!.appendChild(renderer.domElement)
   scene = new Scene()
-  scene.background = new Color(0xfbf9f9)
+  scene.background = new Color(props.fond ?? 0xfbf9f9)
   const pmrem = new PMREMGenerator(renderer)
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
   camera = new PerspectiveCamera(30, 1, 0.1, 500)
@@ -52,7 +52,12 @@ async function charger(url: string) {
   chargement.value = true
   try {
     const buf = await (await fetch(url)).arrayBuffer()
-    const geo = new STLLoader().parse(buf)
+    // Le STL est une soupe de triangles : on soude les sommets pour lisser
+    // l'éclairage, sinon le fil paraît facetté à l'écran alors qu'il ne l'est pas.
+    const brut = new STLLoader().parse(buf)
+    brut.deleteAttribute('normal')
+    const geo = mergeVertices(brut, 1e-4)
+    geo.computeVertexNormals()
     if (maillage) { scene.remove(maillage); maillage.geometry.dispose() }
     maillage = new Mesh(geo, matiere)
     scene.add(maillage)
@@ -60,14 +65,15 @@ async function charger(url: string) {
     const c = b.getCenter(new Vector3())
     controls.target.copy(c)
     const r = b.getSize(new Vector3()).length()
-    camera.position.copy(c).add(new Vector3(0.55, 0.75, 0.9).multiplyScalar(r * 1.25))
+    // Vue de départ : en biais et par-dessus, l'empreinte face au regard.
+    camera.position.copy(c).add(new Vector3(0.45, 0.85, 0.75).normalize().multiplyScalar(r * 1.75))
   } finally {
     chargement.value = false
   }
 }
 
 watch(() => props.url, (u) => u && charger(u))
-watch(() => props.metal, (m) => matiere.color.setHex(TEINTES[m]), { immediate: true })
+watch(() => props.teinte, (t) => matiere.color.setHex(t), { immediate: true })
 
 function vue(nom: 'dessus' | 'face' | 'biais') {
   if (!maillage) return

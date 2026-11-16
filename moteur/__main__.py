@@ -48,13 +48,20 @@ def analyser(image, p, sortie: Path):
                  "images": {"masque": "masque.png", "bande": "bande.png"}}
 
 
-def generer(image, p, sortie: Path):
+def generer(image, p, sortie: Path, leger=False):
+    """`leger` : ni figures ni rendus, seulement le STL et les chiffres — c'est
+    ce que la page client attend, et ça divise le temps par deux."""
     t0 = time.time()
-    emp, res = analyser(image, p, sortie) if image else (None, {"avertissements": [], "images": {}})
+    if leger and image:
+        emp = E.preparer(image, p)
+        res = {"bande": _bande_json(emp, p), "avertissements": emp.avertissements, "images": {}}
+    else:
+        emp, res = analyser(image, p, sortie) if image else (None, {"avertissements": [], "images": {}})
     m = A.construire(p, emp)
     ctrl = A.controler(p, m)
     A.ecrire_stl(sortie / "alliance.stl", m.V, m.F)
-    res["images"].update(rendu.rendus_controle(m, p, sortie))
+    if not leger:
+        res["images"].update(rendu.rendus_controle(m, p, sortie))
     res["controles"] = ctrl
     res["stl"] = "alliance.stl"
     res["parametres"] = {k: v for k, v in p.items()}
@@ -77,6 +84,7 @@ def main(argv=None):
     ap.add_argument("--image")
     ap.add_argument("--params")
     ap.add_argument("--sortie", default="sortie")
+    ap.add_argument("--leger", action="store_true", help="STL et chiffres seulement")
     a = ap.parse_args(argv)
     try:
         if a.action == "synthetique":
@@ -94,7 +102,7 @@ def main(argv=None):
                 image = str(synthetique.empreinte_synthetique(sortie / "empreinte_demo.png"))
             if not image and a.action == "analyser":
                 raise ValueError("Une image d'empreinte est nécessaire.")
-            out = analyser(image, p, sortie)[1] if a.action == "analyser" else generer(image, p, sortie)
+            out = analyser(image, p, sortie)[1] if a.action == "analyser" else generer(image, p, sortie, a.leger)
             (sortie / "resultat.json").write_text(json.dumps(out, ensure_ascii=False, indent=2))
         json.dump({"ok": True, **out}, sys.stdout, ensure_ascii=False)
     except Exception as exc:  # le site affiche le message tel quel
