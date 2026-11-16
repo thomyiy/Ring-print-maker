@@ -50,7 +50,10 @@ const f = (x: number, d = 1) => (x ?? 0).toLocaleString('fr-FR', { minimumFracti
           <img :src="lien(e.ref, 'rendu_general.png')" :alt="e.piece" class="h-28 w-full border border-line bg-paper-2 object-contain">
         </a>
         <div class="min-w-0 text-[14px]">
-          <p class="text-[17px] font-medium text-ink">{{ e.piece }}</p>
+          <p class="text-[17px] font-medium text-ink">
+            {{ e.piece }}
+            <span v-if="e.marque === 'joia'" class="tag ml-2 align-middle">Joia Bijou</span>
+          </p>
           <p class="text-txt">
             {{ e.contact.nom }} · <a :href="`mailto:${e.contact.email}`" class="lien">{{ e.contact.email }}</a>
             <template v-if="e.contact.telephone"> · {{ e.contact.telephone }}</template>

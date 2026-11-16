@@ -3,6 +3,7 @@ import { join } from 'node:path'
 
 interface Corps {
   type?: 'alliance' | 'chevaliere'
+  marque?: string
   id: string
   piece?: { nom?: string }
   contact?: { nom?: string; email?: string; telephone?: string; message?: string }
@@ -59,6 +60,8 @@ export default defineEventHandler(async (event) => {
     piece: nomPiece,
     contact,
     type: chevaliere ? 'chevaliere' : 'alliance',
+    // Pour qui l'atelier fabrique : 'raw', ou le client en marque blanche.
+    marque: c.marque === 'joia' ? 'joia' : 'raw',
     choix: c.choix ?? {},
     bande: r.bande,
     controles: r.controles,

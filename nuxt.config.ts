@@ -3,6 +3,12 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-01-01',
   devtools: { enabled: false },
   modules: ['@nuxtjs/tailwindcss'],
+  // « /joai » : l'adresse telle qu'on l'a d'abord écrite, gardée pour qu'un
+  // lien déjà donné ne tombe pas sur une page vide.
+  routeRules: {
+    '/joai': { redirect: '/joia' },
+    '/joai/**': { redirect: '/joia/**' },
+  },
   css: ['~/assets/css/main.css'],
   tailwindcss: { cssPath: false },
   runtimeConfig: {

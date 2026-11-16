@@ -7,7 +7,8 @@ import {
   boutsBande, construire, placerBande, type Alliance, type TextureRelief,
 } from '~~/shared/alliance'
 
-useHead({ title: 'Alliance empreinte — Rainbow Ant Workshop' })
+const marque = useMarque()
+useHead({ title: `Alliance empreinte — ${marque.nom}` })
 
 // — Les choix ————————————————————————————————————————————————————
 // Densités : or 750 à 15,5 g/cm³ et argent 925 à 10,36 g/cm³, les valeurs de
@@ -184,6 +185,7 @@ async function envoyer(fo: { nom_piece: string; nom: string; email: string; tele
     method: 'POST',
     body: {
       id: depot.value!.id,
+      marque: marque.id,
       piece: { nom: fo.nom_piece },
       contact: { nom: fo.nom, email: fo.email, telephone: fo.telephone, message: fo.message },
       choix: { metal: choix.metal, metalNom: metal.value.nom, taille: choix.taille, cote: choix.cote, relief: choix.relief, periode_mm: choix.periode, poids_g: poids(metal.value.densite) },

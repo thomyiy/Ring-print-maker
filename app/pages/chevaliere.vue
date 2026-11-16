@@ -13,7 +13,8 @@ import {
 } from '~~/shared/chevaliere'
 import type { Piece } from '~~/shared/piece'
 
-useHead({ title: 'Chevalière empreinte — Rainbow Ant Workshop' })
+const marque = useMarque()
+useHead({ title: `Chevalière empreinte — ${marque.nom}` })
 
 // — La bibliothèque ——————————————————————————————————————————————————
 const { data: catalogue } = await useFetch<any>('/api/biblio/catalog-chevaliere.json', { key: 'cat-chev' })
@@ -186,6 +187,7 @@ async function envoyer(fo: { nom_piece: string; nom: string; email: string; tele
     body: {
       type: 'chevaliere',
       id: depot.value!.id,
+      marque: marque.id,
       piece: { nom: fo.nom_piece || 'Chevalière empreinte' },
       contact: { nom: fo.nom, email: fo.email, telephone: fo.telephone, message: fo.message },
       choix: { resume: resume.value, metalNom: metal.value?.name, poids_g: poids(metal.value?.density ?? 0) },

@@ -1,14 +1,19 @@
+<script setup lang="ts">
+const marque = useMarque()
+</script>
+
 <template>
   <header class="border-b border-line">
     <div class="flex items-center justify-between gap-4 px-5 py-4 lg:px-10">
-      <NuxtLink to="/" class="flex items-center gap-3">
-        <img src="/logo-mark.png" alt="" class="h-8 w-auto">
-        <span class="hidden text-[17px] font-medium tracking-tight sm:inline">Rainbow Ant Workshop</span>
+      <NuxtLink :to="marque.base || '/'" class="flex items-center gap-3">
+        <img :src="marque.logo" :alt="marque.nom" class="h-8 w-auto">
+        <span class="hidden text-[17px] font-medium tracking-tight sm:inline">{{ marque.nom }}</span>
       </NuxtLink>
       <nav class="flex items-center gap-5 text-[14px]">
-        <NuxtLink to="/" class="lien-nav" exact-active-class="actif">Alliance</NuxtLink>
-        <NuxtLink to="/chevaliere" class="lien-nav" active-class="actif">Chevalière</NuxtLink>
-        <NuxtLink to="/atelier" class="text-[13px] text-muted hover:text-ink">Atelier</NuxtLink>
+        <NuxtLink :to="marque.base || '/'" class="lien-nav" exact-active-class="actif">Alliance</NuxtLink>
+        <NuxtLink :to="`${marque.base}/chevaliere`" class="lien-nav" active-class="actif">Chevalière</NuxtLink>
+        <!-- L'atelier n'a rien à faire sur l'adresse d'un client. -->
+        <NuxtLink v-if="marque.id === 'raw'" to="/atelier" class="text-[13px] text-muted hover:text-ink">Atelier</NuxtLink>
       </nav>
     </div>
   </header>
