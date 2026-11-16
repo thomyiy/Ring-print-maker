@@ -213,7 +213,10 @@ const largeurMax = computed(() => alliance.value?.largeurMax)
 
     <div class="grid flex-1 items-start lg:grid-cols-[1fr_440px]">
       <!-- ─── La bague ─── -->
-      <div class="relative min-h-[56vh] bg-paper-2 lg:sticky lg:top-0 lg:h-[calc(100vh-65px)]">
+      <!-- ⚠️ UNE HAUTEUR, PAS UNE HAUTEUR MINIMALE. Avec `min-h` seul, la vue 3D
+             (qui prend 100 % de son parent) tombait à 0 px sur téléphone : la
+             bague était calculée, le cadre restait vide (Thomas, 16/11/2026). -->
+        <div class="relative h-[56vh] min-h-[320px] bg-paper-2 lg:sticky lg:top-0 lg:h-[calc(100vh-65px)]">
         <ClientOnly>
           <VueAlliance v-if="alliance" :maillage="alliance" :teinte="metal.teinte" />
         </ClientOnly>

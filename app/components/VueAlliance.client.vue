@@ -174,7 +174,9 @@ defineExpose({ vue })
 </script>
 
 <template>
-  <div class="relative h-full w-full">
+  <!-- Remplit son cadre quoi qu'il arrive : `h-full` dépend d'une hauteur
+       explicite chez le parent, et n'en trouvait pas sur téléphone. -->
+  <div class="absolute inset-0">
     <div ref="hote" class="absolute inset-0" />
     <p v-if="chargement" class="absolute left-4 top-4 eyebrow">Chargement du maillage…</p>
   </div>
