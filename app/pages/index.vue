@@ -33,16 +33,7 @@ const RELIEFS = [
 const TAILLES = Array.from({ length: 27 }, (_, i) => 44 + i)
 
 // L'échelle de l'empreinte, donnée par l'écart entre deux crêtes sur la bague.
-// ⚠️ « TAILLE RÉELLE » PAR DÉFAUT. Le moteur partait sur 7 crêtes dans 1,5 mm
-// (0,21 mm d'écart), soit deux fois plus serré qu'un vrai doigt : toute
-// l'empreinte tenait en 6 mm et ne se lisait plus sur la bague. Thomas l'a vu
-// le 16/11/2026 : « là c'est trop compressé ».
-const ECHELLES = [
-  { periode: 0.45, nom: 'Taille réelle' },
-  { periode: 0.32, nom: 'Réduite' },
-  { periode: 0.22, nom: 'Très fine' },
-]
-const choix = reactive({ metal: 'or-jaune', taille: 54, cote: 1.8, relief: 0.25, periode: 0.45 })
+const choix = reactive({ metal: 'or-jaune', taille: 54, cote: 1.8, relief: 0.25 })
 const diametre = computed(() => Math.round((choix.taille / Math.PI) * 10) / 10)
 
 // — L'empreinte, traitée une fois par le moteur ——————————————————————
@@ -59,10 +50,24 @@ const glisse = ref(false)
 const prep = shallowRef<any>(null)
 const texture = shallowRef<TextureRelief | null>(null)
 
-// Le placement : les deux bouts posés dans l'éditeur (pixels, y vers le bas).
-// Au départ, ceux de la bande automatique du moteur.
-const bandePx = ref<[number, number, number, number] | null>(null)
-const bordABord = ref(true)
+// — Le placement, comme une gravure de médaille ————————————————————————
+// La bande est un « plateau » fixe de LONGUEUR_BANDE × largeur de la face ; on
+// y déplace, agrandit et tourne l'empreinte avec le même éditeur que la
+// chevalière et la médaille (Thomas, 16/11/2026). Les crêtes s'arrêtent là où
+// l'empreinte s'arrête : la bande n'en porte que ce qui tombe dedans.
+const LONGUEUR_BANDE = 22   // mm de face sur le dessus, dans l'arc de torsion
+const placement = ref<[number, number, number]>([0, 0, 0])
+const mmParPx = ref(0.02)
+const periodeMm = computed(() => (prep.value ? mmParPx.value * prep.value.periode_px : 0.45))
+/** Les deux bouts de la bande en pixels d'édition (y vers le bas), ce que
+ *  `placerBande` et le moteur (`bande_px`) attendent. */
+const bandePx = computed<[number, number, number, number] | null>(() => {
+  if (!prep.value) return null
+  const [cx, cy, ang] = placement.value
+  const a = (ang * Math.PI) / 180, d = LONGUEUR_BANDE / 2 / mmParPx.value
+  return [cx - Math.cos(a) * d, cy - Math.sin(a) * d, cx + Math.cos(a) * d, cy + Math.sin(a) * d]
+})
+const bordABord = ref(false)
 
 async function deposer(fichier?: File | null, demo = false) {
   if (!fichier && !demo) return
@@ -96,7 +101,7 @@ async function preparer() {
   try {
     const r = await $fetch<any>('/api/calcul', {
       method: 'POST',
-      body: { id: depot.value.id, action: 'preparer', params: { cote: choix.cote, periode_mm: choix.periode } },
+      body: { id: depot.value.id, action: 'preparer', params: { cote: choix.cote, periode_mm: 0.45 } },
     })
     // La texture devient des pixels lisibles par la géométrie.
     const img = new Image()
@@ -113,22 +118,20 @@ async function preparer() {
       largeur: t.largeur, hauteur: t.hauteur, x0: t.x0, y0: t.y0, facteur: t.facteur,
     }
     prep.value = r
-    bandePx.value = [...r.edition.a, ...r.edition.b] as [number, number, number, number]
-    bordABord.value = true
+    // La bande automatique du moteur devient le placement de départ : même
+    // milieu, même angle, à l'échelle réelle.
+    const [ax, ay] = r.edition.a, [bx, by] = r.edition.b
+    placement.value = [(ax + bx) / 2, (ay + by) / 2, (Math.atan2(by - ay, bx - ax) * 180) / Math.PI]
+    mmParPx.value = 0.45 / r.periode_px
     etat.value = 'pret'
   } catch (e) {
     montrerErreur(e)
   }
 }
 
-function placer(b: [number, number, number, number] | null) {
-  if (b) bandePx.value = b
-  else preparer() // « Placement automatique » : le moteur recadre à l'échelle du moment
-}
 
 // — La bague, construite ici ——————————————————————————————————————————
 const largeurUtile = computed(() => choix.cote - 2 * 0.15)
-const mmParPx = computed(() => (prep.value ? choix.periode / prep.value.periode_px : 0))
 const bande = computed(() => {
   if (!prep.value || !texture.value || !bandePx.value) return null
   return placerBande(bandePx.value, prep.value.hauteur_image, bordABord.value,
@@ -143,18 +146,9 @@ watchEffect(() => {
   )
 })
 
-// L'éditeur montre la bande telle que la bague la porte : en bord à bord, sa
-// longueur suit l'empreinte et se recentre à chaque geste.
-const edition = computed(() => {
-  if (!prep.value || !bande.value) return null
-  const [ax, ay, bx, by] = boutsBande(bande.value, prep.value.hauteur_image)
-  return {
-    ...prep.value.edition,
-    image: prep.value.images.edition,
-    a: [ax, ay], b: [bx, by],
-    largeur_bande_px: largeurUtile.value / mmParPx.value,
-    mm_par_px: mmParPx.value,
-  }
+const contourBande = computed(() => {
+  const l = LONGUEUR_BANDE / 2, w = largeurUtile.value / 2
+  return [[-l, -w], [l, -w], [l, w], [-l, w]] as [number, number][]
 })
 
 /** Ce que le moteur reçoit à l'envoi : la bague qu'on voit, au point près. */
@@ -164,7 +158,7 @@ function paramsMoteur() {
     taille: choix.taille,
     diametre_interieur: diametre.value,
     cote: choix.cote,
-    periode_mm: choix.periode,
+    periode_mm: periodeMm.value,
     hauteur_relief: choix.relief,
     bande_px: b,
     bord_a_bord: bordABord.value,
@@ -178,7 +172,7 @@ const metal = computed(() => METAUX.find((m) => m.id === choix.metal)!)
 const fenetreEnvoi = ref<{ ouvrir: () => void } | null>(null)
 const LIB_RELIEF: Record<number, string> = { 0.18: 'délicat', 0.25: 'marqué', 0.3: 'profond' }
 const resume = computed(() =>
-  `Alliance empreinte · ${ECHELLES.find((e) => e.periode === choix.periode)?.nom.toLowerCase() ?? ''} · ${metal.value.nom} · taille ${choix.taille} · fil ${f(choix.cote, 1)} mm · relief ${LIB_RELIEF[choix.relief] ?? f(choix.relief, 2) + ' mm'}`)
+  `Alliance empreinte · crêtes ${f(periodeMm.value, 2)} mm · ${metal.value.nom} · taille ${choix.taille} · fil ${f(choix.cote, 1)} mm · relief ${LIB_RELIEF[choix.relief] ?? f(choix.relief, 2) + ' mm'}`)
 
 async function envoyer(fo: { nom_piece: string; nom: string; email: string; telephone: string; message: string }) {
   return await $fetch<{ piece: string; ref: string }>('/api/envoi', {
@@ -188,7 +182,7 @@ async function envoyer(fo: { nom_piece: string; nom: string; email: string; tele
       marque: marque.id,
       piece: { nom: fo.nom_piece },
       contact: { nom: fo.nom, email: fo.email, telephone: fo.telephone, message: fo.message },
-      choix: { metal: choix.metal, metalNom: metal.value.nom, taille: choix.taille, cote: choix.cote, relief: choix.relief, periode_mm: choix.periode, poids_g: poids(metal.value.densite) },
+      choix: { metal: choix.metal, metalNom: metal.value.nom, taille: choix.taille, cote: choix.cote, relief: choix.relief, periode_mm: periodeMm.value, poids_g: poids(metal.value.densite) },
       params: paramsMoteur(),
     },
   })
@@ -278,30 +272,19 @@ const largeurMax = computed(() => alliance.value?.largeurMax)
           <p class="mt-2 text-[14px] text-txt">
             Seule une bande de 1,5 mm de large passe sur la bague. Choisissez laquelle.
           </p>
-          <EditeurBande
-            v-if="edition"
-            v-model:bord-a-bord="bordABord"
+          <EditeurGravure
+            v-if="prep"
+            v-model:placement="placement" v-model:mm-par-px="mmParPx"
             class="mt-5"
-            :edition="edition"
-            :occupe="occupe"
-            @change="placer"
+            :image="prep.images.edition" :largeur="prep.edition.largeur" :hauteur="prep.edition.hauteur"
+            :boite="prep.boite_empreinte" :contour="contourBande" :zone="contourBande"
+            :periode-px="prep.periode_px" :modes="false" :echelle-ref="0.45 / prep.periode_px"
+            hors-zone :marge-vue="7"
           />
           <p v-else class="mt-4 text-[13px] text-muted">Lecture de l’empreinte…</p>
-
-          <span class="champ-intitule mt-6">Taille de l’empreinte</span>
-          <div class="mt-2 grid grid-cols-3 gap-px border border-line bg-line">
-            <button
-              v-for="e in ECHELLES" :key="e.periode" type="button"
-              class="bg-paper px-3 py-3 text-center"
-              :class="choix.periode === e.periode ? 'outline outline-2 -outline-offset-2 outline-ink' : 'hover:bg-paper-2'"
-              :aria-pressed="choix.periode === e.periode"
-              @click="choix.periode = e.periode"
-            >
-              <span class="block text-[14px] text-ink">{{ e.nom }}</span>
-              <span class="valeur block text-[12px] text-txt">≈ {{ Math.round((choix.cote - 0.3) / e.periode) }} crêtes</span>
-            </button>
-          </div>
-          <p class="mt-2 text-[13px] text-txt">Le nombre de crêtes sur la largeur de la face.</p>
+          <button v-if="prep" type="button" class="lien mt-2 text-[13px]" :disabled="occupe" @click="preparer()">
+            Placement automatique
+          </button>
         </section>
 
         <!-- 3. Le métal -->

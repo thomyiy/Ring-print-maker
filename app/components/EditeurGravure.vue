@@ -20,6 +20,15 @@ const props = defineProps<{
   contour: Point[]                        // plateau, mm centrés
   zone: Point[]                           // là où les crêtes montent (godet ou plateau rétréci)
   periodePx: number
+  /** Les deux modes « Dans le plateau » / « Plateau dans l'image ». Sans objet
+   *  sur la bande de 1,5 mm d'une alliance. */
+  modes?: boolean
+  /** L'échelle de 100 % ; à défaut, celle du mode (l'empreinte tient ou couvre). */
+  echelleRef?: number
+  /** Montrer l'empreinte estompée autour de la zone, et une marge de vue (mm)
+   *  pour la voir : sur une bande étroite, sans elle on ne sait pas où l'on est. */
+  horsZone?: boolean
+  margeVue?: number
 }>()
 const placement = defineModel<[number, number, number]>('placement', { required: true })
 const mmParPx = defineModel<number>('mmParPx', { required: true })
@@ -62,7 +71,7 @@ const transformImage = computed(() => {
 // — Le cadre de la vue : le plateau, avec de quoi voir la poignée ————————————
 const vue = computed(() => {
   const xs = props.contour.map((p) => p[0]), ys = props.contour.map((p) => p[1])
-  const m = 3.2
+  const m = props.margeVue ?? 3.2
   return { x: Math.min(...xs) - m, y: Math.min(...ys) - m, l: Math.max(...xs) - Math.min(...xs) + 2 * m, h: Math.max(...ys) - Math.min(...ys) + 2 * m }
 })
 const chaine = (pts: P[]) => pts.map((p) => `${p[0].toFixed(3)},${p[1].toFixed(3)}`).join(' ')
@@ -76,7 +85,7 @@ function echellePour(m: 'dans' | 'couvre') {
   const lb = props.boite[2] - props.boite[0], hb = props.boite[3] - props.boite[1]
   return m === 'dans' ? Math.min(lz / lb, hz / hb) * 0.96 : Math.max(lz / lb, hz / hb) * 1.04
 }
-const echelleBase = computed(() => echellePour(mode.value))
+const echelleBase = computed(() => props.echelleRef ?? echellePour(mode.value))
 function recentrer(k: number, ang = placement.value[2]) {
   mmParPx.value = k
   placement.value = centrePour(centreBoite.value, [0, 0], ang, k)
@@ -158,7 +167,7 @@ const idClip = useId()
 
 <template>
   <div>
-    <div class="grid grid-cols-2 border border-line">
+    <div v-if="modes !== false" class="grid grid-cols-2 border border-line">
       <button
         type="button" class="h-9 text-[13px]" :class="mode === 'dans' ? 'bg-ink text-paper' : 'bg-paper text-txt hover:bg-paper-2'"
         @click="choisirMode('dans')"
@@ -178,6 +187,10 @@ const idClip = useId()
           <clipPath :id="idClip"><polygon :points="chaine(zone)" /></clipPath>
         </defs>
         <polygon :points="chaine(contour)" fill="white" stroke="#000" stroke-width="0.08" />
+        <image
+          v-if="horsZone" :href="image" x="0" y="0" :width="largeur" :height="hauteur"
+          :transform="transformImage" opacity="0.22" pointer-events="none"
+        />
         <g :clip-path="`url(#${idClip})`">
           <image :href="image" x="0" y="0" :width="largeur" :height="hauteur" :transform="transformImage" />
         </g>
